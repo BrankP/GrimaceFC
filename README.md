@@ -62,6 +62,33 @@ Then:
 
 This makes changes part of seed data for everyone on next deployment.
 
+
+## Troubleshooting GitHub Pages 404 (`/src/main.tsx`)
+
+If you see:
+
+`GET https://<your-site>/src/main.tsx 404`
+
+that means GitHub Pages is serving the **source** `index.html` directly instead of the Vite-built `dist` output.
+
+### Fix checklist
+
+1. In **Settings → Pages**, set source to **GitHub Actions** (not "Deploy from a branch").
+2. Ensure the deploy workflow succeeds and publishes `dist` from `.github/workflows/deploy-pages.yml`.
+3. Ensure the site URL matches repository type:
+   - user/org site repo (`<user>.github.io`) → base path should be `/`
+   - project repo (`<repo-name>`) → base path should be `/<repo-name>/`
+4. This repo auto-detects base path from `GITHUB_REPOSITORY` in `vite.config.ts`.
+
+### Repo info useful for debugging
+
+Share these and we can pinpoint in 1 pass:
+- exact repository name (e.g. `brankp.github.io` vs `GrimaceFC`)
+- Pages source setting screenshot/text
+- latest Actions run URL + failing step logs (if any)
+- deployed site URL
+- branch name used for deploy
+
 ## Local development
 
 ```bash
