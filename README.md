@@ -1,93 +1,45 @@
 # Grimace FC (GitHub Pages Static Team Hub)
 
-A production-ready, mobile-first React + Vite website for a social soccer team, designed for **GitHub Pages-only** hosting with **no backend server**.
+A mobile-first React + Vite website for a social soccer team, deployable to GitHub Pages with no backend server.
 
-## Why shared anonymous repo writes are not safe on GitHub Pages
+## Static hosting limitation
 
-GitHub Pages serves static files only. Browsers cannot safely write directly to repository JSON without a credential. Exposing a token client-side would allow anyone to abuse repo write access. Therefore this project uses a two-layer model:
-
-1. **Static Demo Mode (always on):** seed data is read from `/public/data/*.json`; user actions persist in `localStorage`.
-2. **Maintainer Sync Mode (optional):** maintainers export local change bundles and merge them into repo JSON using a local Node script (`scripts/merge-local-changes.mjs`) and commit via Git.
-
-This is the safest practical repo-only pattern while remaining fully deployable on GitHub Pages.
-
----
+GitHub Pages is static. Browser users cannot safely write directly to repo JSON without exposing privileged credentials. This app uses repo seed data + browser-local persistence.
 
 ## Features
 
-- Name gate on first load; returning users auto-skip to Chat.
-- Mobile bottom navigation (hidden until user recognized).
-- Upcoming events grouped by month, sorted, with next-up highlight.
-- Fines list + modal submission + mobile filters.
-- Chat view with message bubbles, timestamps, fixed bottom input.
-- Click username to edit nickname (for any user).
-- Next Game lineup page with draggable 4-3-3 positions, subs, not-available lists.
-- Local merge layer over seed JSON with dedupe-by-id.
-- Export local changes bundle for maintainer sync.
+- Name gate on first load; returning users skip directly to the app.
+- Default landing tab is **Upcoming Games** after user recognition.
+- Upcoming events grouped by month, sorted ascending.
+- Per-event availability actions for the current user:
+  - ✅ Available
+  - ❌ Not available
+- Fines page with modal submission + filters.
+- Chat page with nickname editing.
+- Next Game lineup page with drag/drop 4-3-3 positions.
+- Availability drives lineup buckets:
+  - Available unassigned users appear in **Subs**
+  - Not available users appear in **Not available**
 
-## Data source and persistence split
+## Data model
 
-### Seeded from repo JSON (`/public/data`)
+Seed JSON lives in `public/data`:
 - `users.json`
 - `events.json`
 - `fines.json`
 - `messages.json`
 - `nicknames.json`
 - `lineups.json`
+- `availability.json`
 
-### Persisted locally in browser (`localStorage`)
+## Browser persistence
+
+Stored in `localStorage`:
 - current user identity
-- locally created users
-- locally created messages
-- locally created fines
-- nickname overrides
-- lineup changes
+- local users/messages/fines/nicknames/lineups
+- per-event availability records
 
-The app merges seed + local layers at runtime, with local records taking priority by `id`.
-
-## Maintainer sync workflow (no server required)
-
-### Export from browser
-Use the subtle **Maintainer Sync → Export Changes** button in the app to download a JSON bundle of local changes.
-
-### Merge locally into repo JSON
-```bash
-npm run sync:changes -- ./path/to/grimacefc-local-changes-YYYY-MM-DD.json
-```
-
-Then:
-1. Review `git diff`
-2. Run tests/build
-3. Commit and push
-
-This makes changes part of seed data for everyone on next deployment.
-
-
-## Troubleshooting GitHub Pages 404 (`/src/main.tsx`)
-
-If you see:
-
-`GET https://<your-site>/src/main.tsx 404`
-
-that means GitHub Pages is serving the **source** `index.html` directly instead of the Vite-built `dist` output.
-
-### Fix checklist
-
-1. In **Settings → Pages**, set source to **GitHub Actions** (not "Deploy from a branch").
-2. Ensure the deploy workflow succeeds and publishes `dist` from `.github/workflows/deploy-pages.yml`.
-3. Ensure the site URL matches repository type:
-   - user/org site repo (`<user>.github.io`) → base path should be `/`
-   - project repo (`<repo-name>`) → base path should be `/<repo-name>/`
-4. This repo auto-detects base path from `GITHUB_REPOSITORY` in `vite.config.ts`.
-
-### Repo info useful for debugging
-
-Share these and we can pinpoint in 1 pass:
-- exact repository name (e.g. `brankp.github.io` vs `GrimaceFC`)
-- Pages source setting screenshot/text
-- latest Actions run URL + failing step logs (if any)
-- deployed site URL
-- branch name used for deploy
+When a new user joins, availability records are created for every event with default status `not_available`.
 
 ## Local development
 
@@ -105,23 +57,12 @@ npm run preview
 
 ## GitHub Pages deployment
 
-1. Push repo to GitHub (default branch: `main`).
-2. In repo settings, enable **Pages** and set source to **GitHub Actions**.
-3. The included workflow `.github/workflows/deploy-pages.yml` builds Vite and deploys `dist` to Pages.
-4. Update `base` in `vite.config.ts` if repository name changes.
+1. Push to GitHub (`main`).
+2. In Settings → Pages, select **GitHub Actions**.
+3. The workflow `.github/workflows/deploy-pages.yml` builds and deploys `dist`.
 
-## Replacing dummy data with real team data
+## Replacing seed data
 
-1. Edit JSON files under `public/data` with real users/events/etc.
-2. Keep stable `id` values and ISO timestamps.
-3. For lineups, keep `formation: "4-3-3"` and `positions` keys consistent.
-4. Commit and redeploy.
-
-## Architecture notes for future backend
-
-The app is structured with separate layers so a backend can be added later:
-- `services/dataService.ts` for seed loading
-- `utils/storage.ts` for local persistence + merge + export
-- page-level components consume centralized app state
-
-A future API client can replace local storage calls while keeping UI logic mostly unchanged.
+1. Update files under `public/data`.
+2. Keep IDs stable and timestamps in ISO format.
+3. For lineups, keep `formation: "4-3-3"` and standard position keys.

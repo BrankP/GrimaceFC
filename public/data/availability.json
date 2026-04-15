@@ -1,0 +1,177 @@
+[
+  {
+    "id": "avail-101",
+    "eventId": "evt-001",
+    "userId": "usr-001",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-102",
+    "eventId": "evt-001",
+    "userId": "usr-002",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-103",
+    "eventId": "evt-001",
+    "userId": "usr-003",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-104",
+    "eventId": "evt-001",
+    "userId": "usr-004",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-105",
+    "eventId": "evt-001",
+    "userId": "usr-005",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-201",
+    "eventId": "evt-002",
+    "userId": "usr-001",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-202",
+    "eventId": "evt-002",
+    "userId": "usr-002",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-203",
+    "eventId": "evt-002",
+    "userId": "usr-003",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-204",
+    "eventId": "evt-002",
+    "userId": "usr-004",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-205",
+    "eventId": "evt-002",
+    "userId": "usr-005",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-301",
+    "eventId": "evt-003",
+    "userId": "usr-001",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-302",
+    "eventId": "evt-003",
+    "userId": "usr-002",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-303",
+    "eventId": "evt-003",
+    "userId": "usr-003",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-304",
+    "eventId": "evt-003",
+    "userId": "usr-004",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-305",
+    "eventId": "evt-003",
+    "userId": "usr-005",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-401",
+    "eventId": "evt-004",
+    "userId": "usr-001",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-402",
+    "eventId": "evt-004",
+    "userId": "usr-002",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-403",
+    "eventId": "evt-004",
+    "userId": "usr-003",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-404",
+    "eventId": "evt-004",
+    "userId": "usr-004",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-405",
+    "eventId": "evt-004",
+    "userId": "usr-005",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-501",
+    "eventId": "evt-005",
+    "userId": "usr-001",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-502",
+    "eventId": "evt-005",
+    "userId": "usr-002",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-503",
+    "eventId": "evt-005",
+    "userId": "usr-003",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-504",
+    "eventId": "evt-005",
+    "userId": "usr-004",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  },
+  {
+    "id": "avail-505",
+    "eventId": "evt-005",
+    "userId": "usr-005",
+    "status": "not_available",
+    "updatedAt": "2026-04-10T10:00:00Z"
+  }
+]

@@ -8,13 +8,7 @@ import type { Lineup } from '../types/models';
 function DraggablePlayer({ playerId, label }: { playerId: string; label: string }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: `player:${playerId}` });
   return (
-    <button
-      ref={setNodeRef}
-      style={{ transform: CSS.Translate.toString(transform) }}
-      className="chip"
-      {...listeners}
-      {...attributes}
-    >
+    <button ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform) }} className="chip" {...listeners} {...attributes}>
       {label}
     </button>
   );
@@ -26,9 +20,8 @@ function DropSlot({ id, children, className = '' }: { id: string; children: Reac
 }
 
 export function NextGamePage() {
-  const { data, saveLineup, getDisplayName } = useAppState();
+  const { data, saveLineup, getDisplayName, getAvailability } = useAppState();
   const store = data!;
-
 
   const nextGame = useMemo(
     () => [...store.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
@@ -38,18 +31,30 @@ export function NextGamePage() {
   const lineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
     const existing = store.lineups.find((l) => l.eventId === nextGame.id);
-    return (
+    const base =
       existing ?? {
         id: `lineup-${nextGame.id}`,
         eventId: nextGame.id,
-        formation: '4-3-3',
+        formation: '4-3-3' as const,
         positions: Object.fromEntries(FORMATION_433.map((pos) => [pos, null])),
-        subs: store.users.slice(0, 7).map((u) => u.id),
+        subs: [],
         notAvailable: [],
         updatedAt: new Date().toISOString(),
-      }
-    );
-  }, [store.lineups, store.users, nextGame]);
+      };
+
+    const availableUsers = store.users.filter((u) => getAvailability(nextGame.id, u.id) === 'available').map((u) => u.id);
+    const notAvailable = store.users.filter((u) => getAvailability(nextGame.id, u.id) === 'not_available').map((u) => u.id);
+
+    const positions = { ...base.positions };
+    Object.keys(positions).forEach((pos) => {
+      if (positions[pos] && !availableUsers.includes(positions[pos] as string)) positions[pos] = null;
+    });
+
+    const assigned = new Set(Object.values(positions).filter(Boolean) as string[]);
+    const subs = availableUsers.filter((id) => !assigned.has(id));
+
+    return { ...base, positions, subs, notAvailable };
+  }, [store.events, store.lineups, store.users, nextGame, getAvailability]);
 
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 

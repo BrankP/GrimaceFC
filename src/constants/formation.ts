@@ -7,9 +7,9 @@ export const POSITION_LAYOUT: Record<string, { top: string; left: string }> = {
   RCB: { top: '74%', left: '62%' },
   RB: { top: '72%', left: '82%' },
   LCM: { top: '56%', left: '30%' },
-  CM: { top: '52%', left: '50%' },
+  CM: { top: '46%', left: '50%' },
   RCM: { top: '56%', left: '70%' },
-  LW: { top: '34%', left: '20%' },
-  ST: { top: '26%', left: '50%' },
-  RW: { top: '34%', left: '80%' },
+  LW: { top: '32%', left: '20%' },
+  ST: { top: '24%', left: '50%' },
+  RW: { top: '32%', left: '80%' },
 };

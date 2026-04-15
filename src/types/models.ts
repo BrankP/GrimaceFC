@@ -1,4 +1,5 @@
 export type EventType = 'Game' | 'Sesh';
+export type AvailabilityStatus = 'available' | 'not_available';
 
 export interface User {
   id: string;
@@ -56,12 +57,21 @@ export interface Lineup {
   updatedAt: string;
 }
 
+export interface Availability {
+  id: string;
+  eventId: string;
+  userId: string;
+  status: AvailabilityStatus;
+  updatedAt: string;
+}
+
 export interface LocalChanges {
   users: User[];
   fines: Fine[];
   messages: Message[];
   nicknames: Nickname[];
   lineups: Lineup[];
+  availability: Availability[];
 }
 
 export interface DataStore {
@@ -71,4 +81,5 @@ export interface DataStore {
   messages: Message[];
   nicknames: Nickname[];
   lineups: Lineup[];
+  availability: Availability[];
 }

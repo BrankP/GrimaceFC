@@ -9,10 +9,10 @@ const emptyChanges: LocalChanges = {
   messages: [],
   nicknames: [],
   lineups: [],
+  availability: [],
 };
 
 export const readCurrentUserId = () => localStorage.getItem(CURRENT_USER_KEY);
-
 export const writeCurrentUserId = (userId: string) => localStorage.setItem(CURRENT_USER_KEY, userId);
 
 export const readLocalChanges = (): LocalChanges => {
@@ -27,6 +27,7 @@ export const readLocalChanges = (): LocalChanges => {
       messages: parsed.messages ?? [],
       nicknames: parsed.nicknames ?? [],
       lineups: parsed.lineups ?? [],
+      availability: parsed.availability ?? [],
     };
   } catch {
     return structuredClone(emptyChanges);
@@ -50,17 +51,8 @@ export const mergeSeedAndLocal = (seed: DataStore, local: LocalChanges): DataSto
   messages: mergeById(seed.messages, local.messages).sort((a, b) => +new Date(a.createdAt) - +new Date(b.createdAt)),
   nicknames: mergeById(seed.nicknames, local.nicknames).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt)),
   lineups: mergeById(seed.lineups, local.lineups),
+  availability: mergeById(seed.availability, local.availability),
 });
-
-export const makeExportBundle = (changes: LocalChanges) => {
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    schemaVersion: 1,
-    source: 'GrimaceFC local static mode',
-    changes,
-  };
-  return JSON.stringify(payload, null, 2);
-};
 
 export const pushLocalChange = <K extends keyof LocalChanges>(key: K, item: LocalChanges[K][number]) => {
   const current = readLocalChanges();
