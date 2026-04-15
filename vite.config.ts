@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 function resolveBase(repository?: string) {
   const repo = repository?.split('/')[1] ?? '';
   if (!repo) return '/';
-  if (repo.toLowerCase().endsWith('.github.io')) return '/';
+  if (repo.toLowerCase().slice(-10) === '.github.io') return '/';
   return `/${repo}/`;
 }
 
