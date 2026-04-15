@@ -1,0 +1,7 @@
+[
+  { "id": "nick-001", "userId": "usr-001", "nickname": "Aces", "updatedAt": "2026-03-01T10:00:00Z", "updatedByUserId": "usr-001" },
+  { "id": "nick-002", "userId": "usr-002", "nickname": "Benny", "updatedAt": "2026-03-01T10:00:00Z", "updatedByUserId": "usr-002" },
+  { "id": "nick-003", "userId": "usr-003", "nickname": "C-Mile", "updatedAt": "2026-03-01T10:00:00Z", "updatedByUserId": "usr-003" },
+  { "id": "nick-004", "userId": "usr-004", "nickname": "D-Train", "updatedAt": "2026-03-01T10:00:00Z", "updatedByUserId": "usr-004" },
+  { "id": "nick-005", "userId": "usr-005", "nickname": "Mo", "updatedAt": "2026-03-01T10:00:00Z", "updatedByUserId": "usr-005" }
+]
