@@ -4,6 +4,7 @@ import { formatTime } from '../utils/date';
 
 export function ChatPage() {
   const { data, addMessage, getDisplayName, saveNickname } = useAppState();
+  const store = data!;
   const [text, setText] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
@@ -11,7 +12,7 @@ export function ChatPage() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [data.messages.length]);
+  }, [store.messages.length]);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -24,7 +25,7 @@ export function ChatPage() {
     <section className="chat-page">
       <h2>Team Chat</h2>
       <div className="chat-thread card">
-        {data.messages.map((message) => (
+        {store.messages.map((message) => (
           <article className="bubble" key={message.id}>
             <button
               type="button"

@@ -1,15 +1,18 @@
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
-function resolveBase() {
-  const repo = process.env.GITHUB_REPOSITORY?.split('/')[1] ?? '';
-
+function resolveBase(repository?: string) {
+  const repo = repository?.split('/')[1] ?? '';
   if (!repo) return '/';
   if (repo.toLowerCase().endsWith('.github.io')) return '/';
   return `/${repo}/`;
 }
 
-export default defineConfig({
-  plugins: [react()],
-  base: resolveBase(),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, '.', '');
+
+  return {
+    plugins: [react()],
+    base: resolveBase(env.GITHUB_REPOSITORY),
+  };
 });

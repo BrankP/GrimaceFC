@@ -4,16 +4,18 @@ import { getMonthLabel } from '../utils/date';
 
 export function UpcomingGamesPage() {
   const { data } = useAppState();
+  const store = data!;
+
 
   const grouped = useMemo(() => {
-    const sorted = [...data.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
+    const sorted = [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
     return sorted.reduce<Record<string, typeof sorted>>((acc, event) => {
       const month = getMonthLabel(event.date);
       acc[month] = acc[month] ?? [];
       acc[month].push(event);
       return acc;
     }, {});
-  }, [data.events]);
+  }, [store.events]);
 
   return (
     <section>

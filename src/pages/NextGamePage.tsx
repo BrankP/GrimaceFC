@@ -27,27 +27,29 @@ function DropSlot({ id, children, className = '' }: { id: string; children: Reac
 
 export function NextGamePage() {
   const { data, saveLineup, getDisplayName } = useAppState();
+  const store = data!;
+
 
   const nextGame = useMemo(
-    () => [...data.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
-    [data.events],
+    () => [...store.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
+    [store.events],
   );
 
   const lineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
-    const existing = data.lineups.find((l) => l.eventId === nextGame.id);
+    const existing = store.lineups.find((l) => l.eventId === nextGame.id);
     return (
       existing ?? {
         id: `lineup-${nextGame.id}`,
         eventId: nextGame.id,
         formation: '4-3-3',
         positions: Object.fromEntries(FORMATION_433.map((pos) => [pos, null])),
-        subs: data.users.slice(0, 7).map((u) => u.id),
+        subs: store.users.slice(0, 7).map((u) => u.id),
         notAvailable: [],
         updatedAt: new Date().toISOString(),
       }
     );
-  }, [data.lineups, data.users, nextGame]);
+  }, [store.lineups, store.users, nextGame]);
 
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 
