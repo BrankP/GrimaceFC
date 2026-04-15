@@ -60,3 +60,10 @@ export const pushLocalChange = <K extends keyof LocalChanges>(key: K, item: Loca
   const next = { ...current, [key]: [...nextItems, item] };
   writeLocalChanges(next);
 };
+
+export const makeExportBundle = (changes: LocalChanges) =>
+  JSON.stringify({
+    exportedAt: new Date().toISOString(),
+    schemaVersion: 1,
+    changes,
+  });
