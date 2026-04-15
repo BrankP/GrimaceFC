@@ -1,0 +1,47 @@
+[
+  {
+    "id": "lineup-evt-001",
+    "eventId": "evt-001",
+    "formation": "4-3-3",
+    "positions": { "GK": "usr-001", "LB": "usr-002", "LCB": "usr-003", "RCB": "usr-004", "RB": null, "LCM": "usr-005", "CM": null, "RCM": null, "LW": null, "ST": null, "RW": null },
+    "subs": ["usr-002", "usr-003", "usr-004", "usr-005"],
+    "notAvailable": [],
+    "updatedAt": "2026-04-11T12:00:00Z"
+  },
+  {
+    "id": "lineup-evt-003",
+    "eventId": "evt-003",
+    "formation": "4-3-3",
+    "positions": { "GK": null, "LB": null, "LCB": null, "RCB": null, "RB": null, "LCM": null, "CM": null, "RCM": null, "LW": null, "ST": null, "RW": null },
+    "subs": ["usr-001", "usr-002", "usr-003", "usr-004", "usr-005"],
+    "notAvailable": [],
+    "updatedAt": "2026-04-11T12:00:00Z"
+  },
+  {
+    "id": "lineup-evt-005",
+    "eventId": "evt-005",
+    "formation": "4-3-3",
+    "positions": { "GK": null, "LB": null, "LCB": null, "RCB": null, "RB": null, "LCM": null, "CM": null, "RCM": null, "LW": null, "ST": null, "RW": null },
+    "subs": ["usr-001", "usr-003", "usr-005"],
+    "notAvailable": ["usr-002"],
+    "updatedAt": "2026-04-12T12:00:00Z"
+  },
+  {
+    "id": "lineup-evt-archive-01",
+    "eventId": "evt-archive-01",
+    "formation": "4-3-3",
+    "positions": { "GK": "usr-005", "LB": null, "LCB": null, "RCB": null, "RB": null, "LCM": null, "CM": null, "RCM": null, "LW": null, "ST": null, "RW": null },
+    "subs": ["usr-001", "usr-002"],
+    "notAvailable": ["usr-004"],
+    "updatedAt": "2026-03-01T12:00:00Z"
+  },
+  {
+    "id": "lineup-evt-archive-02",
+    "eventId": "evt-archive-02",
+    "formation": "4-3-3",
+    "positions": { "GK": null, "LB": null, "LCB": null, "RCB": null, "RB": null, "LCM": null, "CM": null, "RCM": null, "LW": "usr-003", "ST": null, "RW": null },
+    "subs": ["usr-001", "usr-005"],
+    "notAvailable": [],
+    "updatedAt": "2026-03-15T12:00:00Z"
+  }
+]

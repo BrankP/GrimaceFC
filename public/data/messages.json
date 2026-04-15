@@ -1,0 +1,7 @@
+[
+  { "id": "msg-001", "userId": "usr-001", "text": "Who's bringing the new balls on Monday?", "createdAt": "2026-04-10T16:00:00Z" },
+  { "id": "msg-002", "userId": "usr-002", "text": "I got it. Also cones are in my boot.", "createdAt": "2026-04-10T16:05:00Z" },
+  { "id": "msg-003", "userId": "usr-004", "text": "Can we start 15 mins earlier?", "createdAt": "2026-04-10T16:20:00Z" },
+  { "id": "msg-004", "userId": "usr-003", "text": "I'm in. Need to test my new studs.", "createdAt": "2026-04-10T16:32:00Z" },
+  { "id": "msg-005", "userId": "usr-005", "text": "I'll bring tape and bibs.", "createdAt": "2026-04-10T16:41:00Z" }
+]
