@@ -1,0 +1,7 @@
+[
+  { "id": "evt-001", "eventType": "Game", "date": "2026-04-20T19:00:00Z", "dayOfWeek": "Monday", "homeAway": "Home", "duties": "Set up cones", "location": "Riverside Turf", "opponent": "Purple Comets", "teamName": "Grimace FC", "isNextUp": true },
+  { "id": "evt-002", "eventType": "Sesh", "date": "2026-04-27T18:30:00Z", "dayOfWeek": "Monday", "location": "Riverside Turf", "occasion": "Passing circuits", "teamName": "Grimace FC" },
+  { "id": "evt-003", "eventType": "Game", "date": "2026-05-04T19:15:00Z", "dayOfWeek": "Monday", "homeAway": "Away", "duties": "Bring bibs", "location": "Harbor Park", "opponent": "City Rovers", "teamName": "Grimace FC" },
+  { "id": "evt-004", "eventType": "Sesh", "date": "2026-05-11T18:45:00Z", "dayOfWeek": "Monday", "location": "Central Dome", "occasion": "Set-piece practice", "teamName": "Grimace FC" },
+  { "id": "evt-005", "eventType": "Game", "date": "2026-05-18T20:00:00Z", "dayOfWeek": "Monday", "homeAway": "Home", "duties": "Scoreboard", "location": "Riverside Turf", "opponent": "Late Kickers", "teamName": "Grimace FC" }
+]
