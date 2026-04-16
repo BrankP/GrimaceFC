@@ -85,7 +85,7 @@ export function NextGamePage() {
       if (!next.notAvailable.includes(playerId)) next.notAvailable.push(playerId);
     }
 
-    saveLineup(next);
+    void saveLineup(next);
   };
 
   return (

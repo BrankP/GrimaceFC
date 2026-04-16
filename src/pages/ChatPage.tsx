@@ -17,7 +17,7 @@ export function ChatPage() {
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!text.trim()) return;
-    addMessage(text.trim());
+    void addMessage(text.trim());
     setText('');
   };
 
@@ -54,7 +54,7 @@ export function ChatPage() {
             className="card modal"
             onSubmit={(event) => {
               event.preventDefault();
-              saveNickname(editingUserId, nickname);
+              void saveNickname(editingUserId, nickname);
               setEditingUserId(null);
             }}
           >

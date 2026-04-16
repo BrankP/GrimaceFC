@@ -23,7 +23,7 @@ export function FinesPage() {
   const onSubmitFine = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
-    addFine({
+    void addFine({
       whoUserId: String(formData.get('whoUserId')),
       submittedByUserId: String(formData.get('submittedByUserId')),
       amount: Number(formData.get('amount')),

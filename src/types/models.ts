@@ -4,7 +4,7 @@ export type AvailabilityStatus = 'available' | 'not_available';
 export interface User {
   id: string;
   name: string;
-  nickname?: string;
+  nickname?: string | null;
   createdYear: number;
   createdAt: string;
 }
@@ -14,11 +14,11 @@ export interface TeamEvent {
   eventType: EventType;
   date: string;
   dayOfWeek: string;
-  homeAway?: 'Home' | 'Away';
-  duties?: string;
+  homeAway?: 'Home' | 'Away' | null;
+  duties?: string | null;
   location: string;
-  opponent?: string;
-  occasion?: string;
+  opponent?: string | null;
+  occasion?: string | null;
   teamName: string;
   isNextUp?: boolean;
 }
@@ -39,14 +39,6 @@ export interface Message {
   createdAt: string;
 }
 
-export interface Nickname {
-  id: string;
-  userId: string;
-  nickname: string;
-  updatedAt: string;
-  updatedByUserId: string;
-}
-
 export interface Lineup {
   id: string;
   eventId: string;
@@ -65,21 +57,11 @@ export interface Availability {
   updatedAt: string;
 }
 
-export interface LocalChanges {
-  users: User[];
-  fines: Fine[];
-  messages: Message[];
-  nicknames: Nickname[];
-  lineups: Lineup[];
-  availability: Availability[];
-}
-
 export interface DataStore {
   users: User[];
   events: TeamEvent[];
   fines: Fine[];
   messages: Message[];
-  nicknames: Nickname[];
   lineups: Lineup[];
   availability: Availability[];
 }

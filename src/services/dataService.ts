@@ -1,23 +1,54 @@
-import type { Availability, DataStore, Fine, Lineup, Message, Nickname, TeamEvent, User } from '../types/models';
+import type { AvailabilityStatus, DataStore, Fine, Lineup, Message, TeamEvent, User } from '../types/models';
 
-const withBase = (path: string) => `${import.meta.env.BASE_URL}${path}`.replace(/([^:]\/)\/+/, '$1');
-
-const readJson = async <T,>(path: string): Promise<T> => {
-  const response = await fetch(withBase(path));
-  if (!response.ok) throw new Error(`Failed loading ${withBase(path)}`);
-  return (await response.json()) as T;
+const parse = async <T,>(response: Response): Promise<T> => {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
 };
 
-export const loadSeedData = async (): Promise<DataStore> => {
-  const [users, events, fines, messages, nicknames, lineups, availability] = await Promise.all([
-    readJson<User[]>('data/users.json'),
-    readJson<TeamEvent[]>('data/events.json'),
-    readJson<Fine[]>('data/fines.json'),
-    readJson<Message[]>('data/messages.json'),
-    readJson<Nickname[]>('data/nicknames.json'),
-    readJson<Lineup[]>('data/lineups.json'),
-    readJson<Availability[]>('data/availability.json'),
+const api = async <T,>(path: string, init?: RequestInit) => {
+  const response = await fetch(`/api${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...init,
+  });
+  return parse<T>(response);
+};
+
+export const loadAppData = async (): Promise<DataStore> => {
+  const [events, nextGame, messages, fines] = await Promise.all([
+    api<TeamEvent[]>('/events'),
+    api<TeamEvent | null>('/next-game'),
+    api<Message[]>('/messages'),
+    api<Fine[]>('/fines'),
   ]);
 
-  return { users, events, fines, messages, nicknames, lineups, availability };
+  const users = await api<User[]>('/users');
+  const availability = await api<DataStore['availability']>('/availability');
+  const lineup = nextGame ? await api<Lineup | null>(`/lineup?eventId=${encodeURIComponent(nextGame.id)}`) : null;
+
+  return {
+    users,
+    events,
+    messages,
+    fines,
+    availability,
+    lineups: lineup ? [lineup] : [],
+  };
 };
+
+export const upsertUser = (payload: { id?: string; name: string; nickname?: string | null; createdYear?: number }) =>
+  api<User>('/users/upsert', { method: 'POST', body: JSON.stringify(payload) });
+
+export const postMessage = (payload: { userId: string; text: string }) =>
+  api<Message>('/messages', { method: 'POST', body: JSON.stringify(payload) });
+
+export const postFine = (payload: Omit<Fine, 'id' | 'submittedAt'>) =>
+  api<Fine>('/fines', { method: 'POST', body: JSON.stringify(payload) });
+
+export const postLineup = (payload: Omit<Lineup, 'id' | 'updatedAt'> & { id?: string }) =>
+  api<Lineup>('/lineup', { method: 'POST', body: JSON.stringify(payload) });
+
+export const postAvailability = (payload: { eventId: string; userId: string; status: AvailabilityStatus }) =>
+  api<DataStore['availability'][number]>('/availability', { method: 'POST', body: JSON.stringify(payload) });

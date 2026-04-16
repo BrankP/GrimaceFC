@@ -1,45 +1,70 @@
-# Grimace FC (GitHub Pages Static Team Hub)
+# Grimace FC — Cloudflare Worker + D1
 
-A mobile-first React + Vite website for a social soccer team, deployable to GitHub Pages with no backend server.
+Grimace FC now runs as a Cloudflare Worker serving both:
+- the built React/Vite frontend (`dist` assets)
+- JSON API routes under `/api/*`
 
-## Static hosting limitation
+Shared app state is now persisted in **Cloudflare D1**.
 
-GitHub Pages is static. Browser users cannot safely write directly to repo JSON without exposing privileged credentials. This app uses repo seed data + browser-local persistence.
+## Architecture
 
-## Features
+- Frontend: React + Vite (mobile-first UI)
+- Backend: Cloudflare Worker (`worker/index.ts`)
+- Database: Cloudflare D1 (`env.DB` binding)
+- No auth (all users can edit)
 
-- Name gate on first load; returning users skip directly to the app.
-- Default landing tab is **Upcoming Games** after user recognition.
-- Upcoming events grouped by month, sorted ascending.
-- Per-event availability actions for the current user:
-  - ✅ Available
-  - ❌ Not available
-- Fines page with modal submission + filters.
-- Chat page with nickname editing.
-- Next Game lineup page with drag/drop 4-3-3 positions.
-- Availability drives lineup buckets:
-  - Available unassigned users appear in **Subs**
-  - Not available users appear in **Not available**
+## Database schema & seeds
 
-## Data model
+Migrations live in `migrations/`:
+- `0001_init.sql` — schema
+- `0002_seed.sql` — sample data (5+ rows per table)
 
-Seed JSON lives in `public/data`:
-- `users.json`
-- `events.json`
-- `fines.json`
-- `messages.json`
-- `nicknames.json`
-- `lineups.json`
-- `availability.json`
+Tables:
+- users
+- events
+- messages
+- fines
+- lineups
+- availability
 
-## Browser persistence
+## API endpoints
 
-Stored in `localStorage`:
-- current user identity
-- local users/messages/fines/nicknames/lineups
-- per-event availability records
+- `GET /api/events`
+- `GET /api/next-game`
+- `GET /api/users`
+- `GET /api/messages`
+- `POST /api/messages`
+- `GET /api/fines`
+- `POST /api/fines`
+- `GET /api/lineup?eventId=`
+- `POST /api/lineup`
+- `GET /api/availability`
+- `POST /api/availability`
+- `POST /api/users/upsert`
 
-When a new user joins, availability records are created for every event with default status `not_available`.
+All endpoints return JSON and include permissive CORS headers.
+
+
+## Example `env.DB` queries
+
+```ts
+// read
+const events = await env.DB.prepare('SELECT * FROM events ORDER BY date ASC').all();
+
+// write with bind parameters
+await env.DB
+  .prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
+  .bind(id, userId, text, new Date().toISOString())
+  .run();
+```
+
+## Frontend data behavior
+
+- App data is fetched from Worker API (D1 source of truth)
+- Writes (messages/fines/lineup/users/availability) are sent via POST routes
+- localStorage is now only used for:
+  - current user id
+  - optional UI preferences
 
 ## Local development
 
@@ -48,21 +73,27 @@ npm install
 npm run dev
 ```
 
-## Build
+Run worker locally:
+
+```bash
+npm run cf:dev
+```
+
+## D1 migration/seed
+
+```bash
+npm run db:migrate
+npm run db:seed
+```
+
+## Build and deploy
 
 ```bash
 npm run build
-npm run preview
+npm run cf:deploy
 ```
 
-## GitHub Pages deployment
-
-1. Push to GitHub (`main`).
-2. In Settings → Pages, select **GitHub Actions**.
-3. The workflow `.github/workflows/deploy-pages.yml` builds and deploys `dist`.
-
-## Replacing seed data
-
-1. Update files under `public/data`.
-2. Keep IDs stable and timestamps in ISO format.
-3. For lineups, keep `formation: "4-3-3"` and standard position keys.
+`wrangler.jsonc` is configured to:
+- use `env.DB` binding
+- serve SPA assets from `dist`
+- keep `/api/*` in Worker runtime

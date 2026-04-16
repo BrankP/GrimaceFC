@@ -6,20 +6,19 @@ import { FinesPage } from './pages/FinesPage';
 import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
-import { loadSeedData } from './services/dataService';
-import type { AvailabilityStatus, DataStore, Fine, Lineup, Message, Nickname, User } from './types/models';
-import { createId } from './utils/ids';
-import { mergeSeedAndLocal, pushLocalChange, readCurrentUserId, readLocalChanges, writeCurrentUserId } from './utils/storage';
+import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
+import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
+import { readCurrentUserId, writeCurrentUserId } from './utils/storage';
 
 type AppState = {
   data: DataStore | null;
   currentUser: User | null;
-  upsertUserByName: (name: string) => void;
-  addMessage: (text: string) => void;
-  addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => void;
-  saveNickname: (userId: string, nickname: string) => void;
-  saveLineup: (lineup: Lineup) => void;
-  setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => void;
+  upsertUserByName: (name: string) => Promise<void>;
+  addMessage: (text: string) => Promise<void>;
+  addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => Promise<void>;
+  saveNickname: (userId: string, nickname: string) => Promise<void>;
+  saveLineup: (lineup: Lineup) => Promise<void>;
+  setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
   getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
   getDisplayName: (userId: string) => string;
 };
@@ -32,130 +31,77 @@ export const useAppState = () => {
   return state;
 };
 
-const ensureAvailabilityRecords = (store: DataStore) => {
-  const missing = store.events.flatMap((event) =>
-    store.users
-      .filter((user) => !store.availability.some((a) => a.eventId === event.id && a.userId === user.id))
-      .map((user) => ({
-        id: createId('avail'),
-        eventId: event.id,
-        userId: user.id,
-        status: 'not_available' as const,
-        updatedAt: new Date().toISOString(),
-      })),
-  );
-
-  missing.forEach((record) => pushLocalChange('availability', record));
-  return missing.length > 0;
-};
-
 export default function App() {
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
+  const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const refreshData = async () => {
+    const next = await loadAppData();
+    setData(next);
+  };
+
   useEffect(() => {
-    loadSeedData().then((seed) => {
-      const merged = mergeSeedAndLocal(seed, readLocalChanges());
-      setData(merged);
-      if (ensureAvailabilityRecords(merged)) {
-        setData(mergeSeedAndLocal(merged, readLocalChanges()));
-      }
-    });
+    refreshData().catch((err) => setError(err instanceof Error ? err.message : 'Failed to load data'));
   }, []);
 
   const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
 
-  const refreshWithNewLocalChanges = () => {
-    if (!data) return;
-    const next = mergeSeedAndLocal(data, readLocalChanges());
-    setData(next);
-  };
-
-  const ensureNewUserAvailability = (userId: string) => {
-    if (!data) return;
-    data.events.forEach((event) => {
-      pushLocalChange('availability', {
-        id: createId('avail'),
-        eventId: event.id,
-        userId,
-        status: 'not_available',
-        updatedAt: new Date().toISOString(),
-      });
-    });
-  };
-
-  const upsertUserByName = (name: string) => {
-    if (!data) return;
-    const existing = data.users.find((user) => user.name.toLowerCase() === name.toLowerCase());
-    const user: User =
-      existing ?? {
-        id: createId('usr'),
-        name,
-        createdYear: new Date().getFullYear(),
-        createdAt: new Date().toISOString(),
-      };
-
-    if (!existing) {
-      pushLocalChange('users', user);
-      ensureNewUserAvailability(user.id);
-    }
-
+  const upsertUserByName = async (name: string) => {
+    const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
     writeCurrentUserId(user.id);
     setCurrentUserId(user.id);
-    refreshWithNewLocalChanges();
+    await refreshData();
     navigate('/upcoming');
   };
 
-  const addMessage = (text: string) => {
+  const addMessage = async (text: string) => {
     if (!currentUserId) return;
-    const message: Message = { id: createId('msg'), userId: currentUserId, text, createdAt: new Date().toISOString() };
-    pushLocalChange('messages', message);
-    refreshWithNewLocalChanges();
+    await postMessage({ userId: currentUserId, text });
+    await refreshData();
   };
 
-  const addFine = (fine: Omit<Fine, 'id' | 'submittedAt'>) => {
-    const payload: Fine = { ...fine, id: createId('fine'), submittedAt: new Date().toISOString() };
-    pushLocalChange('fines', payload);
-    refreshWithNewLocalChanges();
+  const addFine = async (fine: Omit<Fine, 'id' | 'submittedAt'>) => {
+    await postFine(fine);
+    await refreshData();
   };
 
-  const saveNickname = (userId: string, nickname: string) => {
-    if (!currentUserId) return;
-    const nick: Nickname = {
-      id: createId('nick'),
-      userId,
-      nickname,
-      updatedAt: new Date().toISOString(),
-      updatedByUserId: currentUserId,
-    };
-    pushLocalChange('nicknames', nick);
-    refreshWithNewLocalChanges();
+  const saveNickname = async (userId: string, nickname: string) => {
+    const user = data?.users.find((u) => u.id === userId);
+    if (!user) return;
+    await upsertUser({ id: userId, name: user.name, nickname });
+    await refreshData();
   };
 
-  const setAvailability = (eventId: string, userId: string, status: AvailabilityStatus) => {
-    const existingId = data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.id ?? createId('avail');
-    pushLocalChange('availability', { id: existingId, eventId, userId, status, updatedAt: new Date().toISOString() });
-    refreshWithNewLocalChanges();
+  const setAvailability = async (eventId: string, userId: string, status: AvailabilityStatus) => {
+    await postAvailability({ eventId, userId, status });
+    await refreshData();
   };
 
   const getAvailability = (eventId: string, userId: string): AvailabilityStatus =>
     data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? 'not_available';
 
-  const saveLineup = (lineup: Lineup) => {
-    pushLocalChange('lineups', { ...lineup, updatedAt: new Date().toISOString() });
-    refreshWithNewLocalChanges();
+  const saveLineup = async (lineup: Lineup) => {
+    await postLineup({
+      id: lineup.id,
+      eventId: lineup.eventId,
+      formation: lineup.formation,
+      positions: lineup.positions,
+      subs: lineup.subs,
+      notAvailable: lineup.notAvailable,
+    });
+    await refreshData();
   };
 
   const getDisplayName = (userId: string) => {
-    if (!data) return 'Unknown';
-    const user = data.users.find((u) => u.id === userId);
-    const latestNickname = data.nicknames.find((n) => n.userId === userId);
-    return latestNickname?.nickname || user?.nickname || user?.name || 'Unknown';
+    const user = data?.users.find((u) => u.id === userId);
+    return user?.nickname || user?.name || 'Unknown';
   };
 
+  if (error) return <main className="loading">Error: {error}</main>;
   if (!data) return <main className="loading">Loading team data…</main>;
-  if (!currentUser) return <NameGate onSubmit={upsertUserByName} />;
+  if (!currentUser) return <NameGate onSubmit={(name) => void upsertUserByName(name)} />;
 
   return (
     <AppContext.Provider

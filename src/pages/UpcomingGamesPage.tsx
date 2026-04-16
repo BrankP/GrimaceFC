@@ -41,7 +41,7 @@ export function UpcomingGamesPage() {
                   <button
                     type="button"
                     className={`icon-toggle ${status === 'available' ? 'active-yes' : ''}`}
-                    onClick={() => setAvailability(event.id, currentUser!.id, 'available')}
+                    onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
                     aria-label="Mark available"
                   >
                     ✅ Available
@@ -49,7 +49,7 @@ export function UpcomingGamesPage() {
                   <button
                     type="button"
                     className={`icon-toggle ${status === 'not_available' ? 'active-no' : ''}`}
-                    onClick={() => setAvailability(event.id, currentUser!.id, 'not_available')}
+                    onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
                     aria-label="Mark not available"
                   >
                     ❌ Not available
