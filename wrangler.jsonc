@@ -1,14 +1,22 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "grimace",
-  "compatibility_date": "2026-04-16",
-  "observability": {
-    "enabled": true
-  },
-  "assets": {
-    "not_found_handling": "single-page-application"
-  },
-  "compatibility_flags": [
-    "nodejs_compat"
-  ]
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "grimace",
+	"compatibility_date": "2026-04-16",
+	"observability": {
+		"enabled": true
+	},
+	"assets": {
+		"not_found_handling": "single-page-application"
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"d1_databases": [
+		{
+			"binding": "grimace_fc",
+			"database_name": "grimace-fc",
+			"database_id": "ae23ca0e-fcb8-47d0-ad08-5847cec3efda",
+			"remote": true
+		}
+	]
 }
