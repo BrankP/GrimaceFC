@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { NameGate } from './components/NameGate';
@@ -8,7 +8,7 @@ import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
 import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
-import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
+import { readCurrentUserId, writeCurrentUserId } from './utils/storage';
 
 type AppState = {
   data: DataStore | null;
@@ -35,61 +35,16 @@ export default function App() {
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
   const [error, setError] = useState('');
-  const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
-  const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const navigate = useNavigate();
-  const isFetchingRef = useRef(false);
-  const lastRefreshRef = useRef(0);
 
-  const refreshData = async (minIntervalMs = 0, force = false) => {
-    const now = Date.now();
-    if (!force && now - lastRefreshRef.current < minIntervalMs) return;
-    if (isFetchingRef.current) return;
-
-    isFetchingRef.current = true;
-    try {
-      const next = await loadAppData();
-      setData(next);
-      lastRefreshRef.current = Date.now();
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-    } finally {
-      isFetchingRef.current = false;
-    }
+  const refreshData = async () => {
+    const next = await loadAppData();
+    setData(next);
   };
 
   useEffect(() => {
-    void refreshData(0, true);
+    refreshData().catch((err) => setError(err instanceof Error ? err.message : 'Failed to load data'));
   }, []);
-
-  useEffect(() => {
-    const messagesInterval = setInterval(() => {
-      void refreshData(10_000);
-    }, 12_000);
-
-    const eventsInterval = setInterval(() => {
-      void refreshData(30_000);
-    }, 45_000);
-
-    return () => {
-      clearInterval(messagesInterval);
-      clearInterval(eventsInterval);
-    };
-  }, []);
-
-  const withWriteGuard = async (operation: () => Promise<void>) => {
-    try {
-      await operation();
-      await refreshData(0, true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Write failed';
-      setError(message);
-      if (message.includes('401') || message.includes('403') || message.toLowerCase().includes('passcode')) {
-        setShowPasscodeModal(true);
-      }
-    }
-  };
 
   const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
 
@@ -97,51 +52,46 @@ export default function App() {
     const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
     writeCurrentUserId(user.id);
     setCurrentUserId(user.id);
-    await refreshData(0, true);
+    await refreshData();
     navigate('/upcoming');
   };
 
   const addMessage = async (text: string) => {
     if (!currentUserId) return;
-    await withWriteGuard(async () => {
-      await postMessage({ userId: currentUserId, text });
-    });
+    await postMessage({ userId: currentUserId, text });
+    await refreshData();
   };
 
   const addFine = async (fine: Omit<Fine, 'id' | 'submittedAt'>) => {
-    await withWriteGuard(async () => {
-      await postFine(fine);
-    });
+    await postFine(fine);
+    await refreshData();
   };
 
   const saveNickname = async (userId: string, nickname: string) => {
     const user = data?.users.find((u) => u.id === userId);
     if (!user) return;
-    await withWriteGuard(async () => {
-      await upsertUser({ id: userId, name: user.name, nickname });
-    });
+    await upsertUser({ id: userId, name: user.name, nickname });
+    await refreshData();
   };
 
   const setAvailability = async (eventId: string, userId: string, status: AvailabilityStatus) => {
-    await withWriteGuard(async () => {
-      await postAvailability({ eventId, userId, status });
-    });
+    await postAvailability({ eventId, userId, status });
+    await refreshData();
   };
 
   const getAvailability = (eventId: string, userId: string): AvailabilityStatus =>
     data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? 'not_available';
 
   const saveLineup = async (lineup: Lineup) => {
-    await withWriteGuard(async () => {
-      await postLineup({
-        id: lineup.id,
-        eventId: lineup.eventId,
-        formation: lineup.formation,
-        positions: lineup.positions,
-        subs: lineup.subs,
-        notAvailable: lineup.notAvailable,
-      });
+    await postLineup({
+      id: lineup.id,
+      eventId: lineup.eventId,
+      formation: lineup.formation,
+      positions: lineup.positions,
+      subs: lineup.subs,
+      notAvailable: lineup.notAvailable,
     });
+    await refreshData();
   };
 
   const getDisplayName = (userId: string) => {
@@ -149,8 +99,9 @@ export default function App() {
     return user?.nickname || user?.name || 'Unknown';
   };
 
-  if (!data && !error) return <main className="loading">Loading team data…</main>;
-  if (!currentUser && data) return <NameGate onSubmit={(name) => void upsertUserByName(name)} />;
+  if (error) return <main className="loading">Error: {error}</main>;
+  if (!data) return <main className="loading">Loading team data…</main>;
+  if (!currentUser) return <NameGate onSubmit={(name) => void upsertUserByName(name)} />;
 
   return (
     <AppContext.Provider
@@ -173,52 +124,17 @@ export default function App() {
             <h1>Grimace FC</h1>
             <p>Social Team Hub</p>
           </div>
-          <div className="row">
-            <button className="secondary" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
-            <span className="badge">{currentUser ? getDisplayName(currentUser.id) : 'Guest'}</span>
-          </div>
+          <span className="badge">{getDisplayName(currentUser.id)}</span>
         </header>
-
-        {error && <p className="error">{error}</p>}
-
-        {data && currentUser && (
-          <main className="page-wrap">
-            <Routes>
-              <Route path="/" element={<Navigate to="/upcoming" replace />} />
-              <Route path="/upcoming" element={<UpcomingGamesPage />} />
-              <Route path="/fines" element={<FinesPage />} />
-              <Route path="/chat" element={<ChatPage />} />
-              <Route path="/game" element={<NextGamePage />} />
-            </Routes>
-          </main>
-        )}
-
-        {showPasscodeModal && (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <form
-              className="card modal"
-              onSubmit={(event) => {
-                event.preventDefault();
-                writeTeamPasscode(passcodeInput.trim());
-                setShowPasscodeModal(false);
-              }}
-            >
-              <h3>Team Write Passcode</h3>
-              <input
-                type="password"
-                value={passcodeInput}
-                onChange={(event) => setPasscodeInput(event.target.value)}
-                placeholder="Enter team passcode"
-                required
-              />
-              <div className="row">
-                <button type="submit">Save</button>
-                <button className="secondary" type="button" onClick={() => setShowPasscodeModal(false)}>Close</button>
-              </div>
-            </form>
-          </div>
-        )}
-
+        <main className="page-wrap">
+          <Routes>
+            <Route path="/" element={<Navigate to="/upcoming" replace />} />
+            <Route path="/upcoming" element={<UpcomingGamesPage />} />
+            <Route path="/fines" element={<FinesPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/game" element={<NextGamePage />} />
+          </Routes>
+        </main>
         <BottomNav />
       </div>
     </AppContext.Provider>
