@@ -13,7 +13,7 @@
 	],
 	"d1_databases": [
 		{
-			"binding": "grimace_fc",
+			"binding": "DB",
 			"database_name": "grimace-fc",
 			"database_id": "ae23ca0e-fcb8-47d0-ad08-5847cec3efda",
 			"remote": true
