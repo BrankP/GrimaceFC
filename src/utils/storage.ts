@@ -28,3 +28,7 @@ export const writeTeamPasscode = (value: string) => localStorage.setItem(TEAM_PA
 
 // kept for backwards compatibility with historical imports in older branches
 export const makeExportBundle = (payload: unknown) => JSON.stringify(payload);
+
+
+// backwards compatibility for older components still importing this symbol
+export const readLocalChanges = () => ({ users: [], fines: [], messages: [], nicknames: [], lineups: [], availability: [] });
