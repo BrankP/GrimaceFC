@@ -45,8 +45,7 @@ export function ChatPage() {
 
   return (
     <section className="chat-page">
-      <h2>Team Chat</h2>
-      <div className="chat-thread card modern-chat-thread">
+      <div className="chat-thread">
         {groupedMessages.map((group) => (
           <div key={group.date} className="chat-day-group">
             <p className="chat-date-divider">{formatDateHeading(group.messages[0].createdAt)}</p>
@@ -61,7 +60,7 @@ export function ChatPage() {
                       setNickname(getDisplayName(message.userId));
                     }}
                   >
-                    🟣 {getDisplayName(message.userId)}
+                    {getDisplayName(message.userId)}
                   </button>
                   <small>{formatDateTime(message.createdAt)}</small>
                 </div>

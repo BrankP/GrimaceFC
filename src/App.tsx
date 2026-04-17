@@ -39,6 +39,7 @@ export default function App() {
   const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [showFineModal, setShowFineModal] = useState(false);
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -198,6 +199,7 @@ export default function App() {
             <p>Social Team Hub</p>
           </div>
           <div className="row">
+            <button className="secondary header-chip" type="button" onClick={() => setShowFineModal(true)}>Fine Submission</button>
             <button className="secondary header-chip" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
             <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
@@ -241,6 +243,38 @@ export default function App() {
               <div className="row">
                 <button type="submit">Save</button>
                 <button className="secondary" type="button" onClick={() => setShowPasscodeModal(false)}>Close</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {showFineModal && currentUser && data && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <form
+              className="card modal"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                void addFine({
+                  whoUserId: String(formData.get('whoUserId')),
+                  submittedByUserId: currentUser.id,
+                  amount: Number(formData.get('amount')),
+                  reason: String(formData.get('reason')),
+                }).then(() => {
+                  setShowFineModal(false);
+                  event.currentTarget.reset();
+                });
+              }}
+            >
+              <h3>Submit Fine</h3>
+              <select name="whoUserId" required>
+                {data.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
+              </select>
+              <input className="no-spinner" name="amount" type="number" min="0" step="0.5" placeholder="Amount" defaultValue={5} required />
+              <input name="reason" placeholder="Reason" required />
+              <div className="row">
+                <button type="submit">Save Fine</button>
+                <button type="button" className="secondary" onClick={() => setShowFineModal(false)}>Cancel</button>
               </div>
             </form>
           </div>
