@@ -6,6 +6,7 @@ import { FinesPage } from './pages/FinesPage';
 import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
+import { NextRefPage } from './pages/NextRefPage';
 import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
 import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
@@ -215,6 +216,7 @@ export default function App() {
               <Route path="/fines" element={<FinesPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/game" element={<NextGamePage />} />
+              <Route path="/next-ref" element={<NextRefPage />} />
             </Routes>
           </main>
         )}

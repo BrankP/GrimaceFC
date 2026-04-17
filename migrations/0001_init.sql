@@ -72,6 +72,49 @@ CREATE TABLE IF NOT EXISTS availability (
   FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS ref_roster (
+  user_id TEXT PRIMARY KEY,
+  roster_order INTEGER NOT NULL UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_state (
+  event_id TEXT PRIMARY KEY,
+  current_user_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('Pending Decision','Accepted')),
+  running_balance INTEGER NOT NULL DEFAULT 0,
+  accepted_at TEXT,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(current_user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_passes (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  passed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_history (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  referee_user_id TEXT NOT NULL,
+  final_balance INTEGER NOT NULL,
+  passed_json TEXT NOT NULL,
+  accepted_at TEXT,
+  completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(referee_user_id) REFERENCES users(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
 CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_ref_roster_order ON ref_roster(roster_order);
+CREATE INDEX IF NOT EXISTS idx_next_ref_passes_event ON next_ref_passes(event_id, passed_at);
+CREATE INDEX IF NOT EXISTS idx_next_ref_history_completed ON next_ref_history(completed_at DESC);
