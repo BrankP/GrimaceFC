@@ -3,9 +3,10 @@ import { FormEvent, useState } from 'react';
 type NameGateProps = {
   onSubmit: (name: string, passcode: string) => void;
   initialName?: string;
+  serverError?: string;
 };
 
-export function NameGate({ onSubmit, initialName = '' }: NameGateProps) {
+export function NameGate({ onSubmit, initialName = '', serverError = '' }: NameGateProps) {
   const [name, setName] = useState(initialName);
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState('');
@@ -41,7 +42,7 @@ export function NameGate({ onSubmit, initialName = '' }: NameGateProps) {
           />
           <label htmlFor="name">Your name</label>
           <input id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Alex" required />
-          {error && <small className="error">{error}</small>}
+          {(error || serverError) && <small className="error">{error || serverError}</small>}
           <button type="submit">Enter Chat</button>
         </form>
       </section>

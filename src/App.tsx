@@ -96,16 +96,22 @@ export default function App() {
   const hasTeamPasscode = teamPasscode.trim().length > 0;
 
   const upsertUserByName = async (name: string, passcode: string) => {
-    const trimmedPasscode = passcode.trim();
-    writeTeamPasscode(trimmedPasscode);
-    setTeamPasscode(trimmedPasscode);
-    setPasscodeInput(trimmedPasscode);
+    try {
+      const trimmedPasscode = passcode.trim();
+      writeTeamPasscode(trimmedPasscode);
+      setTeamPasscode(trimmedPasscode);
+      setPasscodeInput(trimmedPasscode);
 
-    const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
-    writeCurrentUserId(user.id);
-    setCurrentUserId(user.id);
-    await refreshData(0, true);
-    navigate('/chat');
+      const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
+      writeCurrentUserId(user.id);
+      setCurrentUserId(user.id);
+      await refreshData(0, true);
+      navigate('/chat');
+      setError('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to join team chat';
+      setError(message);
+    }
   };
 
   const addMessage = async (text: string) => {
@@ -158,7 +164,7 @@ export default function App() {
 
   if (!data && !error) return <main className="loading">Loading team data…</main>;
   if (data && (!currentUser || !hasTeamPasscode)) {
-    return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} />;
+    return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} serverError={error} />;
   }
 
   return (
