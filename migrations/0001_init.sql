@@ -12,13 +12,16 @@ CREATE TABLE IF NOT EXISTS events (
   date TEXT NOT NULL,
   day_of_week TEXT NOT NULL,
   home_away TEXT,
-  duties TEXT,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
   location TEXT NOT NULL,
   opponent TEXT,
   occasion TEXT,
   team_name TEXT NOT NULL,
   is_next_up INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+  FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
