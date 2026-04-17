@@ -1,21 +1,78 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  TEAM_PASSCODE?: string;
 }
+
+type RateEntry = { count: number; resetAt: number };
+const rateStore = new Map<string, RateEntry>();
+
+const RATE_WINDOW_MS = 60_000;
+const READ_LIMIT = 60;
+const WRITE_LIMIT = 20;
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type,x-team-passcode',
 };
 
-const json = (data: unknown, status = 200) =>
+const jsonResponse = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders, ...extraHeaders },
   });
 
-const error = (message: string, status = 400) => json({ error: message }, status);
+const errorResponse = (message: string, status = 400, extraHeaders: Record<string, string> = {}) =>
+  jsonResponse({ error: message }, status, extraHeaders);
+
+const getClientIp = (request: Request) => request.headers.get('CF-Connecting-IP') ?? 'unknown';
+
+// In-memory limiter (simple protection). Limitation: this is isolate-local and not globally durable across Worker instances.
+// Keep API shape simple so it can be swapped with KV or Durable Objects later.
+const rateLimit = (request: Request) => {
+  const ip = getClientIp(request);
+  const method = request.method.toUpperCase();
+  const isRead = method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
+  const limit = isRead ? READ_LIMIT : WRITE_LIMIT;
+  const now = Date.now();
+  const bucket = `${ip}:${isRead ? 'read' : 'write'}`;
+
+  const current = rateStore.get(bucket);
+  if (!current || now >= current.resetAt) {
+    rateStore.set(bucket, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return { allowed: true, retryAfter: 0 };
+  }
+
+  if (current.count >= limit) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((current.resetAt - now) / 1000));
+    return { allowed: false, retryAfter: retryAfterSeconds };
+  }
+
+  current.count += 1;
+  rateStore.set(bucket, current);
+  return { allowed: true, retryAfter: 0 };
+};
+
+const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
+
+const requireTeamPasscode = (request: Request, env: Env) => {
+  if (!isWriteMethod(request.method)) return null;
+  const configuredPasscode = env.TEAM_PASSCODE;
+  if (!configuredPasscode) return errorResponse('TEAM_PASSCODE is not configured on the Worker', 500);
+  const provided = request.headers.get('x-team-passcode');
+  if (!provided) return errorResponse('x-team-passcode header is required', 401);
+  if (provided !== configuredPasscode) return errorResponse('Invalid team passcode', 403);
+  return null;
+};
+
+const cacheHeadersFor = (pathname: string) => {
+  if (pathname === '/api/events' || pathname === '/api/next-game') return { 'Cache-Control': 'public, max-age=60' };
+  if (pathname === '/api/messages' || pathname === '/api/fines' || pathname === '/api/lineup') {
+    return { 'Cache-Control': 'public, max-age=20' };
+  }
+  return { 'Cache-Control': 'no-store' };
+};
 
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
@@ -31,15 +88,27 @@ const lineupFromRow = (row: Record<string, unknown>) => ({
 });
 
 async function handleApi(request: Request, env: Env) {
-  const { pathname, searchParams } = new URL(request.url);
-  const method = request.method;
+  const url = new URL(request.url);
+  const { pathname, searchParams } = url;
+  const method = request.method.toUpperCase();
 
   if (method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
 
+  const limitResult = rateLimit(request);
+  if (!limitResult.allowed) {
+    return errorResponse('Rate limit exceeded', 429, { 'Retry-After': String(limitResult.retryAfter), 'Cache-Control': 'no-store' });
+  }
+
+  const passcodeError = requireTeamPasscode(request, env);
+  if (passcodeError) return passcodeError;
+
   try {
     if (pathname === '/api/events' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM events ORDER BY date ASC').all();
-      return json(
+      const { results } = await env.DB.prepare(
+        'SELECT id, event_type, date, day_of_week, home_away, duties, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+      ).all();
+
+      return jsonResponse(
         results.map((row) => ({
           id: row.id,
           eventType: row.event_type,
@@ -53,48 +122,56 @@ async function handleApi(request: Request, env: Env) {
           teamName: row.team_name,
           isNextUp: Boolean(row.is_next_up),
         })),
+        200,
+        cacheHeadersFor(pathname),
       );
     }
 
     if (pathname === '/api/next-game' && method === 'GET') {
-      const row = await env.DB.prepare("SELECT * FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1").first();
-      if (!row) return json(null);
-      return json({
-        id: row.id,
-        eventType: row.event_type,
-        date: row.date,
-        dayOfWeek: row.day_of_week,
-        homeAway: row.home_away,
-        duties: row.duties,
-        location: row.location,
-        opponent: row.opponent,
-        occasion: row.occasion,
-        teamName: row.team_name,
-        isNextUp: Boolean(row.is_next_up),
-      });
+      const row = await env.DB.prepare(
+        "SELECT id, event_type, date, day_of_week, home_away, duties, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+      ).first();
+      if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
+      return jsonResponse(
+        {
+          id: row.id,
+          eventType: row.event_type,
+          date: row.date,
+          dayOfWeek: row.day_of_week,
+          homeAway: row.home_away,
+          duties: row.duties,
+          location: row.location,
+          opponent: row.opponent,
+          occasion: row.occasion,
+          teamName: row.team_name,
+          isNextUp: Boolean(row.is_next_up),
+        },
+        200,
+        cacheHeadersFor(pathname),
+      );
     }
 
     if (pathname === '/api/users' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM users ORDER BY created_at ASC').all();
-      return json(
-        results.map((row) => ({
-          id: row.id,
-          name: row.name,
-          nickname: row.nickname,
-          createdYear: row.created_year,
-          createdAt: row.created_at,
-        })),
+      const { results } = await env.DB.prepare('SELECT id, name, nickname, created_year, created_at FROM users ORDER BY created_at ASC LIMIT 50').all();
+      return jsonResponse(
+        results.map((row) => ({ id: row.id, name: row.name, nickname: row.nickname, createdYear: row.created_year, createdAt: row.created_at })),
       );
     }
 
     if (pathname === '/api/messages' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM messages ORDER BY created_at ASC').all();
-      return json(results.map((row) => ({ id: row.id, userId: row.user_id, text: row.text, createdAt: row.created_at })));
+      const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at FROM messages ORDER BY created_at DESC LIMIT 50').all();
+      return jsonResponse(
+        results
+          .reverse()
+          .map((row) => ({ id: row.id, userId: row.user_id, text: row.text, createdAt: row.created_at })),
+        200,
+        cacheHeadersFor(pathname),
+      );
     }
 
     if (pathname === '/api/messages' && method === 'POST') {
       const body = (await request.json()) as { userId?: string; text?: string };
-      if (!body.userId || !body.text?.trim()) return error('userId and text are required');
+      if (!body.userId || !body.text?.trim()) return errorResponse('userId and text are required');
       const id = createId('msg');
       const createdAt = nowIso();
 
@@ -102,12 +179,12 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, body.userId, body.text.trim(), createdAt)
         .run();
 
-      return json({ id, userId: body.userId, text: body.text.trim(), createdAt }, 201);
+      return jsonResponse({ id, userId: body.userId, text: body.text.trim(), createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
     if (pathname === '/api/fines' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM fines ORDER BY submitted_at DESC').all();
-      return json(
+      const { results } = await env.DB.prepare('SELECT id, who_user_id, amount, reason, submitted_by_user_id, submitted_at FROM fines ORDER BY submitted_at DESC LIMIT 50').all();
+      return jsonResponse(
         results.map((row) => ({
           id: row.id,
           whoUserId: row.who_user_id,
@@ -116,18 +193,15 @@ async function handleApi(request: Request, env: Env) {
           submittedByUserId: row.submitted_by_user_id,
           submittedAt: row.submitted_at,
         })),
+        200,
+        cacheHeadersFor(pathname),
       );
     }
 
     if (pathname === '/api/fines' && method === 'POST') {
-      const body = (await request.json()) as {
-        whoUserId?: string;
-        amount?: number;
-        reason?: string;
-        submittedByUserId?: string;
-      };
+      const body = (await request.json()) as { whoUserId?: string; amount?: number; reason?: string; submittedByUserId?: string };
       if (!body.whoUserId || !body.submittedByUserId || !body.reason?.trim() || typeof body.amount !== 'number') {
-        return error('whoUserId, amount, reason, submittedByUserId are required');
+        return errorResponse('whoUserId, amount, reason, submittedByUserId are required');
       }
       const id = createId('fine');
       const submittedAt = nowIso();
@@ -138,24 +212,20 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, body.whoUserId, body.amount, body.reason.trim(), body.submittedByUserId, submittedAt, submittedAt)
         .run();
 
-      return json(
-        {
-          id,
-          whoUserId: body.whoUserId,
-          amount: body.amount,
-          reason: body.reason.trim(),
-          submittedByUserId: body.submittedByUserId,
-          submittedAt,
-        },
-        201,
-      );
+      return jsonResponse({ id, whoUserId: body.whoUserId, amount: body.amount, reason: body.reason.trim(), submittedByUserId: body.submittedByUserId, submittedAt }, 201, {
+        'Cache-Control': 'no-store',
+      });
     }
 
     if (pathname === '/api/lineup' && method === 'GET') {
       const eventId = searchParams.get('eventId');
-      if (!eventId) return error('eventId is required');
-      const row = await env.DB.prepare('SELECT * FROM lineups WHERE event_id = ?1 LIMIT 1').bind(eventId).first();
-      return json(row ? lineupFromRow(row as Record<string, unknown>) : null);
+      if (!eventId) return errorResponse('eventId is required');
+      const row = await env.DB.prepare(
+        'SELECT id, event_id, formation, positions_json, subs_json, not_available_json, updated_at FROM lineups WHERE event_id = ?1 LIMIT 1',
+      )
+        .bind(eventId)
+        .first();
+      return jsonResponse(row ? lineupFromRow(row as Record<string, unknown>) : null, 200, cacheHeadersFor(pathname));
     }
 
     if (pathname === '/api/lineup' && method === 'POST') {
@@ -168,9 +238,11 @@ async function handleApi(request: Request, env: Env) {
         notAvailable?: string[];
       };
       if (!body.eventId || !body.formation || !body.positions || !body.subs || !body.notAvailable) {
-        return error('eventId, formation, positions, subs, notAvailable are required');
+        return errorResponse('eventId, formation, positions, subs, notAvailable are required');
       }
-      const id = body.id || createId('lineup');
+
+      const existing = await env.DB.prepare('SELECT id FROM lineups WHERE event_id = ?1 LIMIT 1').bind(body.eventId).first<{ id: string }>();
+      const id = body.id || existing?.id || createId('lineup');
       const updatedAt = nowIso();
 
       await env.DB.prepare(
@@ -179,18 +251,20 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, body.eventId, body.formation, JSON.stringify(body.positions), JSON.stringify(body.subs), JSON.stringify(body.notAvailable), updatedAt, updatedAt)
         .run();
 
-      return json({ id, eventId: body.eventId, formation: body.formation, positions: body.positions, subs: body.subs, notAvailable: body.notAvailable, updatedAt }, 201);
+      return jsonResponse({ id, eventId: body.eventId, formation: body.formation, positions: body.positions, subs: body.subs, notAvailable: body.notAvailable, updatedAt }, 201, {
+        'Cache-Control': 'no-store',
+      });
     }
 
     if (pathname === '/api/availability' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT * FROM availability ORDER BY updated_at DESC').all();
-      return json(results.map((row) => ({ id: row.id, eventId: row.event_id, userId: row.user_id, status: row.status, updatedAt: row.updated_at })));
+      const { results } = await env.DB.prepare('SELECT id, event_id, user_id, status, updated_at FROM availability ORDER BY updated_at DESC LIMIT 500').all();
+      return jsonResponse(results.map((row) => ({ id: row.id, eventId: row.event_id, userId: row.user_id, status: row.status, updatedAt: row.updated_at })));
     }
 
     if (pathname === '/api/availability' && method === 'POST') {
       const body = (await request.json()) as { eventId?: string; userId?: string; status?: 'available' | 'not_available' };
-      if (!body.eventId || !body.userId || !body.status) return error('eventId, userId, status are required');
-      if (!['available', 'not_available'].includes(body.status)) return error('status must be available or not_available');
+      if (!body.eventId || !body.userId || !body.status) return errorResponse('eventId, userId, status are required');
+      if (!['available', 'not_available'].includes(body.status)) return errorResponse('status must be available or not_available');
 
       const existing = await env.DB.prepare('SELECT id FROM availability WHERE event_id = ?1 AND user_id = ?2 LIMIT 1')
         .bind(body.eventId, body.userId)
@@ -204,15 +278,17 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, body.eventId, body.userId, body.status, updatedAt, updatedAt)
         .run();
 
-      return json({ id, eventId: body.eventId, userId: body.userId, status: body.status, updatedAt }, 201);
+      return jsonResponse({ id, eventId: body.eventId, userId: body.userId, status: body.status, updatedAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
     if (pathname === '/api/users/upsert' && method === 'POST') {
       const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
-      if (!body.name?.trim()) return error('name is required');
+      if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
-      const byName = await env.DB.prepare('SELECT * FROM users WHERE lower(name) = lower(?1) LIMIT 1').bind(normalized).first();
+      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname FROM users WHERE lower(name) = lower(?1) LIMIT 1')
+        .bind(normalized)
+        .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
       const createdAt = (byName?.created_at as string | undefined) ?? nowIso();
       const createdYear = Number(body.createdYear ?? byName?.created_year ?? new Date().getFullYear());
@@ -230,24 +306,20 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, id, nowIso(), createdAt)
         .run();
 
-      return json({ id, name: normalized, nickname, createdYear, createdAt }, 201);
+      return jsonResponse({ id, name: normalized, nickname, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
-    return error('Not found', 404);
+    return errorResponse('Not found', 404);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown server error';
-    return error(message, 500);
+    return errorResponse(message, 500, { 'Cache-Control': 'no-store' });
   }
 }
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-
-    if (url.pathname.startsWith('/api/')) {
-      return handleApi(request, env);
-    }
-
+    if (url.pathname.startsWith('/api/')) return handleApi(request, env);
     return env.ASSETS.fetch(request);
   },
 };

@@ -1,4 +1,5 @@
 import type { AvailabilityStatus, DataStore, Fine, Lineup, Message, TeamEvent, User } from '../types/models';
+import { readTeamPasscode } from '../utils/storage';
 
 const parse = async <T,>(response: Response): Promise<T> => {
   if (!response.ok) {
@@ -9,10 +10,16 @@ const parse = async <T,>(response: Response): Promise<T> => {
 };
 
 const api = async <T,>(path: string, init?: RequestInit) => {
-  const response = await fetch(`/api${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const headers = new Headers(init?.headers ?? {});
+  headers.set('Content-Type', 'application/json');
+
+  const isWrite = (init?.method ?? 'GET').toUpperCase() !== 'GET';
+  if (isWrite) {
+    const passcode = readTeamPasscode();
+    if (passcode) headers.set('x-team-passcode', passcode);
+  }
+
+  const response = await fetch(`/api${path}`, { ...init, headers });
   return parse<T>(response);
 };
 
@@ -28,14 +35,7 @@ export const loadAppData = async (): Promise<DataStore> => {
   const availability = await api<DataStore['availability']>('/availability');
   const lineup = nextGame ? await api<Lineup | null>(`/lineup?eventId=${encodeURIComponent(nextGame.id)}`) : null;
 
-  return {
-    users,
-    events,
-    messages,
-    fines,
-    availability,
-    lineups: lineup ? [lineup] : [],
-  };
+  return { users, events, messages, fines, availability, lineups: lineup ? [lineup] : [] };
 };
 
 export const upsertUser = (payload: { id?: string; name: string; nickname?: string | null; createdYear?: number }) =>
