@@ -59,7 +59,7 @@ const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].inc
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
   const configuredPasscode = env.TEAM_PASSCODE;
-  if (!configuredPasscode) return errorResponse('TEAM_PASSCODE is not configured on the Worker', 500);
+  if (!configuredPasscode) return null;
   const provided = request.headers.get('x-team-passcode');
   if (!provided) return errorResponse('x-team-passcode header is required', 401);
   if (provided !== configuredPasscode) return errorResponse('Invalid team passcode', 403);
