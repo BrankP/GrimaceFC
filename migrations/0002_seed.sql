@@ -1,9 +1,17 @@
 INSERT OR REPLACE INTO users (id, name, nickname, created_year, created_at) VALUES
-('usr-001', 'Alex Carter', 'Aces', 2026, '2026-03-02T10:10:00Z'),
-('usr-002', 'Ben Singh', 'Benny', 2026, '2026-03-04T17:20:00Z'),
-('usr-003', 'Cory Miles', 'C-Mile', 2026, '2026-03-10T09:30:00Z'),
-('usr-004', 'Devon Price', 'D-Train', 2026, '2026-03-19T15:42:00Z'),
-('usr-005', 'Eli Moreno', 'Mo', 2026, '2026-03-23T13:09:00Z');
+('usr-001', 'Alastair Cockerton', NULL, 2026, '2026-03-02T10:10:00Z'),
+('usr-002', 'Cale Whiting', NULL, 2026, '2026-03-04T17:20:00Z'),
+('usr-003', 'Brendan Jones', NULL, 2026, '2026-03-10T09:30:00Z'),
+('usr-004', 'Brendan Todd', NULL, 2026, '2026-03-19T15:42:00Z'),
+('usr-005', 'Brad Fox', NULL, 2026, '2026-03-23T13:09:00Z'),
+('usr-006', 'Jack Gibson', NULL, 2026, '2026-03-25T13:09:00Z'),
+('usr-007', 'James Foley', NULL, 2026, '2026-03-27T13:09:00Z'),
+('usr-008', 'James West', NULL, 2026, '2026-03-29T13:09:00Z'),
+('usr-009', 'Josh Gates', NULL, 2026, '2026-03-31T13:09:00Z'),
+('usr-010', 'Justin Lever', NULL, 2026, '2026-04-02T13:09:00Z'),
+('usr-011', 'Matt Paul', NULL, 2026, '2026-04-04T13:09:00Z'),
+('usr-012', 'Sam Bayly', NULL, 2026, '2026-04-06T13:09:00Z'),
+('usr-013', 'Tom Jenkins', NULL, 2026, '2026-04-08T13:09:00Z');
 
 INSERT OR REPLACE INTO events (id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up) VALUES
 ('evt-001', 'Game', '2026-04-18T15:00:00Z', 'Saturday', 'Home', 'usr-001', 'usr-003', 'Riverside Turf', 'Curl Curl A', NULL, 'Grimace FC', 1),

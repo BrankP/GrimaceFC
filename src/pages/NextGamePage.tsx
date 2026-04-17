@@ -75,7 +75,7 @@ const removeFromPrimaryPlacement = (lineup: Lineup, playerId: string) => {
   lineup.notAvailable = lineup.notAvailable.filter((id) => id !== playerId);
 };
 
-const addToPrimaryPlacement = (lineup: Lineup, target: PrimaryTarget, playerId: string) => {
+const addToPrimaryPlacement = (lineup: Lineup, target: PrimaryTarget, playerId: string): { displacedUserId: string | null } => {
   if (target.startsWith('position:')) {
     const pos = target.replace('position:', '');
     const displaced = lineup.positions[pos];
@@ -83,24 +83,25 @@ const addToPrimaryPlacement = (lineup: Lineup, target: PrimaryTarget, playerId: 
     if (displaced && displaced !== playerId && !lineup.subs.includes(displaced)) {
       lineup.subs.push(displaced);
     }
-    return;
+    return { displacedUserId: displaced && displaced !== playerId ? displaced : null };
   }
 
   if (target === 'subs') {
     if (!lineup.subs.includes(playerId)) lineup.subs.push(playerId);
-    return;
+    return { displacedUserId: null };
   }
 
   if (target === 'notAvailable') {
     if (!lineup.notAvailable.includes(playerId)) lineup.notAvailable.push(playerId);
   }
+  return { displacedUserId: null };
 };
 
 const isPrimaryTarget = (target: DropTarget): target is PrimaryTarget =>
   target.startsWith('position:') || target === 'subs' || target === 'notAvailable';
 
 export function NextGamePage() {
-  const { data, saveLineup, getUserName, getAvailability } = useAppState();
+  const { data, saveLineup, getUserName, getAvailability, setAvailability } = useAppState();
   const store = data!;
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -180,9 +181,13 @@ export function NextGamePage() {
     };
 
     // Only primary placement is mutually exclusive (field/subs/not available)
+    let draggedPrimaryStatus: 'available' | 'not_available' | null = null;
+    let displacedUserId: string | null = null;
     if (isPrimaryTarget(target)) {
       removeFromPrimaryPlacement(next, parsed.playerId);
-      addToPrimaryPlacement(next, target, parsed.playerId);
+      const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
+      displacedUserId = primaryResult.displacedUserId;
+      draggedPrimaryStatus = target === 'notAvailable' ? 'not_available' : 'available';
     }
 
     // Duty assignment dimensions are independent and additive.
@@ -205,7 +210,14 @@ export function NextGamePage() {
     setHasPendingSave(true);
     void (async () => {
       try {
-        await saveLineup(next);
+        const writes: Array<Promise<void>> = [saveLineup(next)];
+        if (draggedPrimaryStatus) {
+          writes.push(setAvailability(nextGame.id, parsed.playerId, draggedPrimaryStatus));
+        }
+        if (displacedUserId) {
+          writes.push(setAvailability(nextGame.id, displacedUserId, 'available'));
+        }
+        await Promise.all(writes);
       } finally {
         setHasPendingSave(false);
       }
