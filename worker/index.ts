@@ -59,7 +59,7 @@ const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].inc
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
   const configuredPasscode = env.TEAM_PASSCODE;
-  if (!configuredPasscode) return errorResponse('TEAM_PASSCODE is not configured on the Worker', 500);
+  if (!configuredPasscode) return null;
   const provided = request.headers.get('x-team-passcode');
   if (!provided) return errorResponse('x-team-passcode header is required', 401);
   if (provided !== configuredPasscode) return errorResponse('Invalid team passcode', 403);
@@ -76,6 +76,85 @@ const cacheHeadersFor = (pathname: string) => {
 
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+const schemaStatements = [
+  `CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    nickname TEXT,
+    created_year INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS events (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL CHECK(event_type IN ('Game','Sesh')),
+    date TEXT NOT NULL,
+    day_of_week TEXT NOT NULL,
+    home_away TEXT,
+    duties TEXT,
+    location TEXT NOT NULL,
+    opponent TEXT,
+    occasion TEXT,
+    team_name TEXT NOT NULL,
+    is_next_up INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`,
+  `CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS fines (
+    id TEXT PRIMARY KEY,
+    who_user_id TEXT NOT NULL,
+    amount REAL NOT NULL,
+    reason TEXT NOT NULL,
+    submitted_by_user_id TEXT NOT NULL,
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(who_user_id) REFERENCES users(id),
+    FOREIGN KEY(submitted_by_user_id) REFERENCES users(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS lineups (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    formation TEXT NOT NULL,
+    positions_json TEXT NOT NULL,
+    subs_json TEXT NOT NULL,
+    not_available_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(event_id) REFERENCES events(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS availability (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('available','not_available')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(event_id, user_id),
+    FOREIGN KEY(event_id) REFERENCES events(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)',
+  'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id)',
+] as const;
+
+let schemaInitPromise: Promise<void> | null = null;
+
+const ensureSchema = async (env: Env) => {
+  if (!schemaInitPromise) {
+    schemaInitPromise = (async () => {
+      for (const statement of schemaStatements) {
+        await env.DB.prepare(statement).run();
+      }
+    })();
+  }
+  await schemaInitPromise;
+};
 
 const lineupFromRow = (row: Record<string, unknown>) => ({
   id: String(row.id),
@@ -318,6 +397,13 @@ async function handleApi(request: Request, env: Env) {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    try {
+      await ensureSchema(env);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to initialize database schema';
+      return errorResponse(message, 500, { 'Cache-Control': 'no-store' });
+    }
+
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env);
     return env.ASSETS.fetch(request);
