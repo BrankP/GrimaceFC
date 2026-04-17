@@ -145,7 +145,24 @@ export function NextGamePage() {
     const subs = availableUsers.filter((id) => !assigned.has(id));
 
     return { ...base, positions, subs, notAvailable };
-  }, [store.events, store.lineups, store.users, nextGame, getAvailability]);
+  }, [store.lineups, store.users, nextGame, getAvailability]);
+
+  const [draftLineup, setDraftLineup] = useState<Lineup | null>(null);
+  const [hasPendingSave, setHasPendingSave] = useState(false);
+
+  useEffect(() => {
+    if (!hasPendingSave) {
+      if (draftLineup && computedLineup) {
+        const draftTs = Date.parse(draftLineup.updatedAt);
+        const computedTs = Date.parse(computedLineup.updatedAt);
+        // Do not overwrite optimistic state with older (possibly cached) server responses.
+        if (Number.isFinite(draftTs) && Number.isFinite(computedTs) && computedTs < draftTs) return;
+      }
+      setDraftLineup(computedLineup);
+    }
+  }, [computedLineup, hasPendingSave, draftLineup]);
+
+  const lineup = draftLineup ?? computedLineup;
 
   const [draftLineup, setDraftLineup] = useState<Lineup | null>(null);
   const [hasPendingSave, setHasPendingSave] = useState(false);
