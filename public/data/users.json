@@ -1,0 +1,7 @@
+[
+  { "id": "usr-001", "name": "Alex Carter", "nickname": "Aces", "createdYear": 2025, "createdAt": "2025-03-02T10:10:00Z" },
+  { "id": "usr-002", "name": "Ben Singh", "nickname": "Benny", "createdYear": 2025, "createdAt": "2025-03-04T17:20:00Z" },
+  { "id": "usr-003", "name": "Cory Miles", "nickname": "C-Mile", "createdYear": 2025, "createdAt": "2025-04-10T09:30:00Z" },
+  { "id": "usr-004", "name": "Devon Price", "nickname": "D-Train", "createdYear": 2025, "createdAt": "2025-04-19T15:42:00Z" },
+  { "id": "usr-005", "name": "Eli Moreno", "nickname": "Mo", "createdYear": 2025, "createdAt": "2025-05-23T13:09:00Z" }
+]

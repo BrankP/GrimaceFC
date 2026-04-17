@@ -1,0 +1,7 @@
+[
+  { "id": "fine-001", "whoUserId": "usr-001", "amount": 5, "reason": "Late to warmup", "submittedByUserId": "usr-002", "submittedAt": "2026-04-01T18:20:00Z" },
+  { "id": "fine-002", "whoUserId": "usr-004", "amount": 2, "reason": "Forgot shin pads", "submittedByUserId": "usr-003", "submittedAt": "2026-04-03T18:40:00Z" },
+  { "id": "fine-003", "whoUserId": "usr-003", "amount": 4, "reason": "Nutmegged in rondo", "submittedByUserId": "usr-001", "submittedAt": "2026-04-05T19:05:00Z" },
+  { "id": "fine-004", "whoUserId": "usr-005", "amount": 6, "reason": "Missed sitter", "submittedByUserId": "usr-004", "submittedAt": "2026-04-08T20:00:00Z" },
+  { "id": "fine-005", "whoUserId": "usr-002", "amount": 3, "reason": "Own goal", "submittedByUserId": "usr-005", "submittedAt": "2026-04-10T20:15:00Z" }
+]
