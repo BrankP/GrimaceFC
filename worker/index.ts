@@ -149,7 +149,7 @@ const ensureSchema = async (env: Env) => {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
       for (const statement of schemaStatements) {
-        await env.DB.exec(statement);
+        await env.DB.prepare(statement).run();
       }
     })();
   }
