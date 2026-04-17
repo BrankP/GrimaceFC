@@ -67,9 +67,10 @@ const requireTeamPasscode = (request: Request, env: Env) => {
 
 const cacheHeadersFor = (pathname: string) => {
   if (pathname === '/api/events' || pathname === '/api/next-game') return { 'Cache-Control': 'public, max-age=60' };
-  if (pathname === '/api/messages' || pathname === '/api/fines' || pathname === '/api/lineup') {
+  if (pathname === '/api/messages' || pathname === '/api/fines') {
     return { 'Cache-Control': 'public, max-age=20' };
   }
+  if (pathname === '/api/lineup') return { 'Cache-Control': 'no-store' };
   return { 'Cache-Control': 'no-store' };
 };
 

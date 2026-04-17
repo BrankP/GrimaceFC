@@ -1,4 +1,14 @@
-import { DndContext, DragEndEvent, PointerSensor, TouchSensor, closestCenter, useDraggable, useDroppable, useSensor, useSensors } from '@dnd-kit/core';
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  TouchSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../App';
@@ -135,10 +145,19 @@ export function NextGamePage() {
   }, [store.events, store.lineups, store.users, nextGame, getAvailability]);
 
   const [draftLineup, setDraftLineup] = useState<Lineup | null>(null);
+  const [hasPendingSave, setHasPendingSave] = useState(false);
 
   useEffect(() => {
-    setDraftLineup(computedLineup);
-  }, [computedLineup]);
+    if (!hasPendingSave) {
+      if (draftLineup && computedLineup) {
+        const draftTs = Date.parse(draftLineup.updatedAt);
+        const computedTs = Date.parse(computedLineup.updatedAt);
+        // Do not overwrite optimistic state with older (possibly cached) server responses.
+        if (Number.isFinite(draftTs) && Number.isFinite(computedTs) && computedTs < draftTs) return;
+      }
+      setDraftLineup(computedLineup);
+    }
+  }, [computedLineup, hasPendingSave, draftLineup]);
 
   const lineup = draftLineup ?? computedLineup;
 
@@ -153,37 +172,44 @@ export function NextGamePage() {
     const next: Lineup = {
       ...lineup,
       positions: { ...lineup.positions },
-      subs: lineup.subs.filter((id) => id !== playerId),
-      notAvailable: lineup.notAvailable.filter((id) => id !== playerId),
-      beerDutyUserId: lineup.beerDutyUserId === playerId ? null : lineup.beerDutyUserId ?? null,
-      refDutyUserId: lineup.refDutyUserId === playerId ? null : lineup.refDutyUserId ?? null,
+      subs: [...lineup.subs],
+      notAvailable: [...lineup.notAvailable],
+      beerDutyUserId: lineup.beerDutyUserId ?? null,
+      refDutyUserId: lineup.refDutyUserId ?? null,
+      updatedAt: new Date().toISOString(),
     };
 
-    Object.keys(next.positions).forEach((pos) => {
-      if (next.positions[pos] === playerId) next.positions[pos] = null;
-    });
+    // Only primary placement is mutually exclusive (field/subs/not available)
+    if (isPrimaryTarget(target)) {
+      removeFromPrimaryPlacement(next, parsed.playerId);
+      addToPrimaryPlacement(next, target, parsed.playerId);
+    }
 
-    if (target.startsWith('position:')) {
-      const pos = target.replace('position:', '');
-      const existing = next.positions[pos];
-      next.positions[pos] = playerId;
-      if (existing && existing !== playerId) next.subs.push(existing);
-    } else if (target === 'beerDuty') {
-      const displaced = next.beerDutyUserId;
-      next.beerDutyUserId = playerId;
-      if (displaced && displaced !== playerId) next.subs.push(displaced);
-    } else if (target === 'refDuty') {
-      const displaced = next.refDutyUserId;
-      next.refDutyUserId = playerId;
-      if (displaced && displaced !== playerId) next.subs.push(displaced);
-    } else if (target === 'subs') {
-      if (!next.subs.includes(playerId)) next.subs.push(playerId);
-    } else if (target === 'notAvailable') {
-      if (!next.notAvailable.includes(playerId)) next.notAvailable.push(playerId);
+    // Duty assignment dimensions are independent and additive.
+    if (target === 'beerDuty') {
+      next.beerDutyUserId = parsed.playerId;
+    }
+    if (target === 'refDuty') {
+      next.refDutyUserId = parsed.playerId;
+    }
+
+    // If dragging from a specific duty token to primary space, only clear that duty token.
+    if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty') {
+      if (next.beerDutyUserId === parsed.playerId) next.beerDutyUserId = null;
+    }
+    if (isPrimaryTarget(target) && parsed.dimension === 'refDuty') {
+      if (next.refDutyUserId === parsed.playerId) next.refDutyUserId = null;
     }
 
     setDraftLineup(next);
-    void saveLineup(next);
+    setHasPendingSave(true);
+    void (async () => {
+      try {
+        await saveLineup(next);
+      } finally {
+        setHasPendingSave(false);
+      }
+    })();
   };
 
   return (
@@ -194,39 +220,44 @@ export function NextGamePage() {
         <div className="lineup-layout">
           <div className="field card">
             {FORMATION_433.map((pos) => (
-              <DropSlot key={pos} id={`position:${pos}`} className="position" >
-                <div style={POSITION_LAYOUT[pos]} className="position-inner">
-                  <small>{pos}</small>
-                  {lineup.positions[pos] && (
-                    <DraggablePlayer playerId={lineup.positions[pos] as string} label={getUserName(lineup.positions[pos] as string)} />
-                  )}
-                </div>
-              </DropSlot>
+              <PositionDropSlot key={pos} position={pos} playerId={lineup.positions[pos] as string | null} getUserName={getUserName} />
             ))}
           </div>
           <aside className="stack">
             <DropSlot id="beerDuty" className="card">
               <h3>Beer Duty</h3>
               <div className="chip-wrap">
-                {lineup.beerDutyUserId ? <DraggablePlayer playerId={lineup.beerDutyUserId} label={getUserName(lineup.beerDutyUserId)} /> : <small>Unassigned</small>}
+                {lineup.beerDutyUserId ? (
+                  <DraggablePlayer dragId={buildDragId('beerDuty', 'beerDuty', lineup.beerDutyUserId)} label={getUserName(lineup.beerDutyUserId)} />
+                ) : (
+                  <small>Unassigned</small>
+                )}
               </div>
             </DropSlot>
             <DropSlot id="refDuty" className="card">
               <h3>Ref Duty</h3>
               <div className="chip-wrap">
-                {lineup.refDutyUserId ? <DraggablePlayer playerId={lineup.refDutyUserId} label={getUserName(lineup.refDutyUserId)} /> : <small>Unassigned</small>}
+                {lineup.refDutyUserId ? (
+                  <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} />
+                ) : (
+                  <small>Unassigned</small>
+                )}
               </div>
             </DropSlot>
             <DropSlot id="subs" className="card">
               <h3>Subs</h3>
               <div className="chip-wrap">
-                {lineup.subs.map((id) => <DraggablePlayer key={id} playerId={id} label={getUserName(id)} />)}
+                {lineup.subs.map((id) => (
+                  <DraggablePlayer key={`subs-${id}`} dragId={buildDragId('primary', 'subs', id)} label={getUserName(id)} />
+                ))}
               </div>
             </DropSlot>
             <DropSlot id="notAvailable" className="card">
               <h3>Not available</h3>
               <div className="chip-wrap">
-                {lineup.notAvailable.map((id) => <DraggablePlayer key={id} playerId={id} label={getUserName(id)} />)}
+                {lineup.notAvailable.map((id) => (
+                  <DraggablePlayer key={`notavail-${id}`} dragId={buildDragId('primary', 'notAvailable', id)} label={getUserName(id)} />
+                ))}
               </div>
             </DropSlot>
           </aside>
