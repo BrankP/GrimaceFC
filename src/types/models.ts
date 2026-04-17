@@ -15,7 +15,8 @@ export interface TeamEvent {
   date: string;
   dayOfWeek: string;
   homeAway?: 'Home' | 'Away' | null;
-  duties?: string | null;
+  beerDutyUserId?: string | null;
+  refDutyUserId?: string | null;
   location: string;
   opponent?: string | null;
   occasion?: string | null;
@@ -46,6 +47,8 @@ export interface Lineup {
   positions: Record<string, string | null>;
   subs: string[];
   notAvailable: string[];
+  beerDutyUserId?: string | null;
+  refDutyUserId?: string | null;
   updatedAt: string;
 }
 

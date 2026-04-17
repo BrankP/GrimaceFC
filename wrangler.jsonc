@@ -9,6 +9,9 @@
     "not_found_handling": "single-page-application"
   },
   "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "TEAM_PASSCODE": "nah"
+  },
   "d1_databases": [
     {
       "binding": "DB",
