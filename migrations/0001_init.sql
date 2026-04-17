@@ -12,13 +12,16 @@ CREATE TABLE IF NOT EXISTS events (
   date TEXT NOT NULL,
   day_of_week TEXT NOT NULL,
   home_away TEXT,
-  duties TEXT,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
   location TEXT NOT NULL,
   opponent TEXT,
   occasion TEXT,
   team_name TEXT NOT NULL,
   is_next_up INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+  FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -48,9 +51,13 @@ CREATE TABLE IF NOT EXISTS lineups (
   positions_json TEXT NOT NULL,
   subs_json TEXT NOT NULL,
   not_available_json TEXT NOT NULL,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY(event_id) REFERENCES events(id)
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+  FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS availability (
