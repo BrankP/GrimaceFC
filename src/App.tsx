@@ -198,8 +198,8 @@ export default function App() {
             <p>Social Team Hub</p>
           </div>
           <div className="row">
-            <button className="secondary" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
-            <span className="badge">{currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
+            <button className="secondary header-chip" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
+            <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>
 
