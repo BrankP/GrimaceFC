@@ -1,7 +1,7 @@
 import {
   DndContext,
   DragEndEvent,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   closestCenter,
   useDraggable,
@@ -104,9 +104,11 @@ export function NextGamePage() {
   const { data, saveLineup, getUserName, getAvailability, setAvailability } = useAppState();
   const store = data!;
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 4 },
+    }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 120, tolerance: 8 },
+      activationConstraint: { delay: 180, tolerance: 6 },
     }),
   );
 
