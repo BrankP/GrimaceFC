@@ -2,7 +2,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { useAppState } from '../App';
 
 export function FinesPage() {
-  const { data, addFine, getDisplayName, currentUser } = useAppState();
+  const { data, addFine, getUserName, currentUser } = useAppState();
   const store = data!;
   const [isModalOpen, setModalOpen] = useState(false);
   const [whoFilter, setWhoFilter] = useState('');
@@ -20,6 +20,13 @@ export function FinesPage() {
     [store.fines, whoFilter, submitterFilter, maxAmount],
   );
 
+  const activeUserTotalOwed = useMemo(() => {
+    if (!currentUser) return 0;
+    return store.fines
+      .filter((fine) => fine.whoUserId === currentUser.id)
+      .reduce((total, fine) => total + fine.amount, 0);
+  }, [store.fines, currentUser]);
+
   const onSubmitFine = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
@@ -36,6 +43,11 @@ export function FinesPage() {
   return (
     <section>
       <h2>Fines</h2>
+      {currentUser && (
+        <p className="card">
+          <strong>{getUserName(currentUser.id)}</strong> owes <strong>${activeUserTotalOwed.toFixed(2)}</strong>
+        </p>
+      )}
       <div className="row">
         <button onClick={() => setModalOpen(true)}>Fine Submission</button>
         <button className="secondary">Filter</button>
@@ -43,11 +55,11 @@ export function FinesPage() {
       <div className="card filters">
         <select value={whoFilter} onChange={(e) => setWhoFilter(e.target.value)}>
           <option value="">All players</option>
-          {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
+          {store.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
         </select>
         <select value={submitterFilter} onChange={(e) => setSubmitterFilter(e.target.value)}>
           <option value="">All submitters</option>
-          {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
+          {store.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
         </select>
         <input
           type="number"
@@ -59,10 +71,10 @@ export function FinesPage() {
       <div className="stack">
         {filtered.map((fine) => (
           <article className="card" key={fine.id}>
-            <p><strong>Who:</strong> {getDisplayName(fine.whoUserId)}</p>
+            <p><strong>Who:</strong> {getUserName(fine.whoUserId)}</p>
             <p><strong>Amount:</strong> ${fine.amount.toFixed(2)}</p>
             <p><strong>Fuck up:</strong> {fine.reason}</p>
-            <p><strong>Submitted by:</strong> {getDisplayName(fine.submittedByUserId)}</p>
+            <p><strong>Submitted by:</strong> {getUserName(fine.submittedByUserId)}</p>
           </article>
         ))}
       </div>
@@ -72,12 +84,12 @@ export function FinesPage() {
           <form className="card modal" onSubmit={onSubmitFine}>
             <h3>Submit Fine</h3>
             <select name="whoUserId" required>
-              {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
+              {store.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
             </select>
             <input name="amount" type="number" min="0" step="0.5" placeholder="Amount" required />
             <input name="reason" placeholder="Reason" required />
             <select name="submittedByUserId" defaultValue={currentUser?.id} required>
-              {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
+              {store.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
             </select>
             <div className="row">
               <button type="submit">Save Fine</button>
