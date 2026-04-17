@@ -14,7 +14,7 @@ export function UpcomingGamesPage() {
 
   const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
 
-  const [expandedIds, setExpandedIds] = useState<string[]>(() => (sortedEvents[0] ? [sortedEvents[0].id] : []));
+  const [expandedId, setExpandedId] = useState<string | null>(() => (sortedEvents[0] ? sortedEvents[0].id : null));
 
   const grouped = useMemo(
     () =>
@@ -27,9 +27,7 @@ export function UpcomingGamesPage() {
     [sortedEvents],
   );
 
-  const toggleExpanded = (eventId: string) => {
-    setExpandedIds((existing) => (existing.includes(eventId) ? existing.filter((id) => id !== eventId) : [...existing, eventId]));
-  };
+  const toggleExpanded = (eventId: string) => setExpandedId(eventId);
 
   return (
     <section>
@@ -44,7 +42,8 @@ export function UpcomingGamesPage() {
               const beerDutyUserId = lineup?.beerDutyUserId ?? event.beerDutyUserId;
               const refDutyUserId = lineup?.refDutyUserId ?? event.refDutyUserId;
               const indicator = getEventIndicator(event.eventType, event.homeAway);
-              const isExpanded = expandedIds.includes(event.id);
+              const isExpanded = expandedId === event.id;
+              const shouldShowRefDuty = event.eventType === 'Game' && event.homeAway === 'Away';
 
               return (
                 <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''}`} onClick={() => toggleExpanded(event.id)}>
@@ -66,29 +65,29 @@ export function UpcomingGamesPage() {
 
                     {isExpanded && (
                       <>
-                        {event.eventType === 'Game' && (
-                          <p className="sleek-event-line muted">Beer: {beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'} · Ref: {refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
-                        )}
-                        <div className="row avail-row" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            className={`icon-toggle ${status === 'available' ? 'active-yes' : ''}`}
-                            onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
-                            aria-label="Mark available"
-                          >
-                            ✅ Available
-                          </button>
-                          <button
-                            type="button"
-                            className={`icon-toggle ${status === 'not_available' ? 'active-no' : ''}`}
-                            onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
-                            aria-label="Mark not available"
-                          >
-                            ❌ Not available
-                          </button>
-                        </div>
+                        {event.eventType === 'Game' && <p className="sleek-event-line muted">Beer: {beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'}</p>}
+                        {shouldShowRefDuty && <p className="sleek-event-line muted">Ref: {refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>}
                       </>
                     )}
+
+                    <div className="row avail-row" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        className={`avail-pill ${status === 'available' ? 'active-yes' : ''}`}
+                        onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
+                        aria-label="Mark available"
+                      >
+                        ✅ Available
+                      </button>
+                      <button
+                        type="button"
+                        className={`avail-pill ${status === 'not_available' ? 'active-no' : ''}`}
+                        onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
+                        aria-label="Mark not available"
+                      >
+                        ❌ Not available
+                      </button>
+                    </div>
                   </div>
                 </article>
               );

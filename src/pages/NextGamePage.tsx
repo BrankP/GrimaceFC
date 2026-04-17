@@ -22,11 +22,11 @@ type DragDimension = 'primary' | 'beerDuty' | 'refDuty';
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
-const parseDragId = (dragId: string): { dimension: DragDimension; playerId: string } | null => {
+const parseDragId = (dragId: string): { dimension: DragDimension; source: string; playerId: string } | null => {
   const [dimension, source, playerId] = dragId.split('|');
   if (!dimension || !source || !playerId) return null;
   if (dimension !== 'primary' && dimension !== 'beerDuty' && dimension !== 'refDuty') return null;
-  return { dimension, playerId };
+  return { dimension, source, playerId };
 };
 
 function DraggablePlayer({ dragId, label }: { dragId: string; label: string }) {
@@ -114,6 +114,7 @@ export function NextGamePage() {
     () => [...store.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
     [store.events],
   );
+  const showRefDuty = nextGame?.homeAway === 'Away';
 
   const computedLineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
@@ -182,14 +183,32 @@ export function NextGamePage() {
     let displacedUserId: string | null = null;
 
     if (isPrimaryTarget(target)) {
-      removeFromPrimaryPlacement(next, parsed.playerId);
-      const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
-      displacedUserId = primaryResult.displacedUserId;
+      const isFieldSwap =
+        parsed.dimension === 'primary' &&
+        parsed.source.startsWith('position:') &&
+        target.startsWith('position:') &&
+        Boolean(lineup.positions[target.replace('position:', '')]);
+
+      if (isFieldSwap) {
+        const sourcePos = parsed.source.replace('position:', '');
+        const targetPos = target.replace('position:', '');
+        const targetPlayer = lineup.positions[targetPos] as string | null;
+        const sourcePlayer = lineup.positions[sourcePos] as string | null;
+
+        if (targetPlayer && sourcePlayer === parsed.playerId) {
+          next.positions[sourcePos] = targetPlayer;
+          next.positions[targetPos] = parsed.playerId;
+        }
+      } else {
+        removeFromPrimaryPlacement(next, parsed.playerId);
+        const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
+        displacedUserId = primaryResult.displacedUserId;
+      }
       draggedPrimaryStatus = target === 'notAvailable' ? 'not_available' : 'available';
     }
 
     if (target === 'beerDuty') next.beerDutyUserId = parsed.playerId;
-    if (target === 'refDuty') next.refDutyUserId = parsed.playerId;
+    if (target === 'refDuty' && showRefDuty) next.refDutyUserId = parsed.playerId;
 
     if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty' && next.beerDutyUserId === parsed.playerId) {
       next.beerDutyUserId = null;
@@ -234,16 +253,18 @@ export function NextGamePage() {
                 )}
               </div>
             </DropSlot>
-            <DropSlot id="refDuty" className="card">
-              <h3>Ref Duty</h3>
-              <div className="chip-wrap">
-                {lineup.refDutyUserId ? (
-                  <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} />
-                ) : (
-                  <small>Unassigned</small>
-                )}
-              </div>
-            </DropSlot>
+            {showRefDuty && (
+              <DropSlot id="refDuty" className="card">
+                <h3>Ref Duty</h3>
+                <div className="chip-wrap">
+                  {lineup.refDutyUserId ? (
+                    <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} />
+                  ) : (
+                    <small>Unassigned</small>
+                  )}
+                </div>
+              </DropSlot>
+            )}
             <DropSlot id="subs" className="card">
               <h3>Subs</h3>
               <div className="chip-wrap">

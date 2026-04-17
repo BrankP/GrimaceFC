@@ -182,13 +182,13 @@ const ensureDefaultDutyAssignments = async (env: Env) => {
   if (userIds.length === 0) return;
 
   const events = await env.DB.prepare(
-    "SELECT id, beer_duty_user_id, ref_duty_user_id FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 100",
-  ).all<{ id: string; beer_duty_user_id: string | null; ref_duty_user_id: string | null }>();
+    "SELECT id, home_away, beer_duty_user_id, ref_duty_user_id FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 100",
+  ).all<{ id: string; home_away: string | null; beer_duty_user_id: string | null; ref_duty_user_id: string | null }>();
 
   let idx = 0;
   for (const event of events.results) {
     const beerDutyUserId = event.beer_duty_user_id ?? userIds[idx % userIds.length];
-    const refDutyUserId = event.ref_duty_user_id ?? userIds[(idx + 1) % userIds.length] ?? beerDutyUserId;
+    const refDutyUserId = event.home_away === 'Away' ? event.ref_duty_user_id ?? userIds[(idx + 1) % userIds.length] ?? beerDutyUserId : null;
     idx += 1;
 
     await env.DB.prepare('UPDATE events SET beer_duty_user_id = ?1, ref_duty_user_id = ?2 WHERE id = ?3')

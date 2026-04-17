@@ -51,6 +51,16 @@ button.secondary { background: #39245f; }
 .icon-toggle.active-yes { background: #1e8f56; }
 .icon-toggle.active-no { background: #9a2341; }
 .avail-row { margin-top: .55rem; }
+.avail-pill {
+  min-height: 34px;
+  padding: .35rem .55rem;
+  border-radius: 999px;
+  font-size: .78rem;
+  background: #2a1b47;
+  border: 1px solid #4f3d7c;
+}
+.avail-pill.active-yes { background: #1e8f56; border-color: #1e8f56; }
+.avail-pill.active-no { background: #8c2040; border-color: #8c2040; }
 input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px solid #6448b0; background: #1b0d33; color: var(--text); }
 .bottom-nav {
   position: fixed; bottom: 0; left: 0; right: 0;
