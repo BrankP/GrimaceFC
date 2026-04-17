@@ -125,9 +125,13 @@ const schemaStatements = [
     positions_json TEXT NOT NULL,
     subs_json TEXT NOT NULL,
     not_available_json TEXT NOT NULL,
+    beer_duty_user_id TEXT,
+    ref_duty_user_id TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY(event_id) REFERENCES events(id)
+    FOREIGN KEY(event_id) REFERENCES events(id),
+    FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+    FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS availability (
     id TEXT PRIMARY KEY,
@@ -159,6 +163,39 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
 };
 
+const ensureLineupDutyColumns = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(lineups)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('beer_duty_user_id')) {
+    await env.DB.prepare('ALTER TABLE lineups ADD COLUMN beer_duty_user_id TEXT').run();
+  }
+  if (!existingColumns.has('ref_duty_user_id')) {
+    await env.DB.prepare('ALTER TABLE lineups ADD COLUMN ref_duty_user_id TEXT').run();
+  }
+};
+
+const ensureDefaultDutyAssignments = async (env: Env) => {
+  const users = await env.DB.prepare('SELECT id FROM users ORDER BY created_at ASC LIMIT 50').all<{ id: string }>();
+  const userIds = users.results.map((user) => String(user.id));
+  if (userIds.length === 0) return;
+
+  const events = await env.DB.prepare(
+    "SELECT id, beer_duty_user_id, ref_duty_user_id FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 100",
+  ).all<{ id: string; beer_duty_user_id: string | null; ref_duty_user_id: string | null }>();
+
+  let idx = 0;
+  for (const event of events.results) {
+    const beerDutyUserId = event.beer_duty_user_id ?? userIds[idx % userIds.length];
+    const refDutyUserId = event.ref_duty_user_id ?? userIds[(idx + 1) % userIds.length] ?? beerDutyUserId;
+    idx += 1;
+
+    await env.DB.prepare('UPDATE events SET beer_duty_user_id = ?1, ref_duty_user_id = ?2 WHERE id = ?3')
+      .bind(beerDutyUserId, refDutyUserId, event.id)
+      .run();
+  }
+};
+
 const ensureSchema = async (env: Env) => {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
@@ -166,6 +203,8 @@ const ensureSchema = async (env: Env) => {
         await env.DB.prepare(statement).run();
       }
       await ensureEventDutyColumns(env);
+      await ensureLineupDutyColumns(env);
+      await ensureDefaultDutyAssignments(env);
     })();
   }
   await schemaInitPromise;
@@ -178,6 +217,8 @@ const lineupFromRow = (row: Record<string, unknown>) => ({
   positions: JSON.parse(String(row.positions_json)),
   subs: JSON.parse(String(row.subs_json)),
   notAvailable: JSON.parse(String(row.not_available_json)),
+  beerDutyUserId: row.beer_duty_user_id ? String(row.beer_duty_user_id) : null,
+  refDutyUserId: row.ref_duty_user_id ? String(row.ref_duty_user_id) : null,
   updatedAt: String(row.updated_at),
 });
 
@@ -317,7 +358,7 @@ async function handleApi(request: Request, env: Env) {
       const eventId = searchParams.get('eventId');
       if (!eventId) return errorResponse('eventId is required');
       const row = await env.DB.prepare(
-        'SELECT id, event_id, formation, positions_json, subs_json, not_available_json, updated_at FROM lineups WHERE event_id = ?1 LIMIT 1',
+        'SELECT id, event_id, formation, positions_json, subs_json, not_available_json, beer_duty_user_id, ref_duty_user_id, updated_at FROM lineups WHERE event_id = ?1 LIMIT 1',
       )
         .bind(eventId)
         .first();
@@ -332,6 +373,8 @@ async function handleApi(request: Request, env: Env) {
         positions?: Record<string, string | null>;
         subs?: string[];
         notAvailable?: string[];
+        beerDutyUserId?: string | null;
+        refDutyUserId?: string | null;
       };
       if (!body.eventId || !body.formation || !body.positions || !body.subs || !body.notAvailable) {
         return errorResponse('eventId, formation, positions, subs, notAvailable are required');
@@ -342,14 +385,37 @@ async function handleApi(request: Request, env: Env) {
       const updatedAt = nowIso();
 
       await env.DB.prepare(
-        'INSERT INTO lineups (id, event_id, formation, positions_json, subs_json, not_available_json, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id, formation=excluded.formation, positions_json=excluded.positions_json, subs_json=excluded.subs_json, not_available_json=excluded.not_available_json, updated_at=excluded.updated_at',
+        'INSERT INTO lineups (id, event_id, formation, positions_json, subs_json, not_available_json, beer_duty_user_id, ref_duty_user_id, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) ON CONFLICT(id) DO UPDATE SET event_id=excluded.event_id, formation=excluded.formation, positions_json=excluded.positions_json, subs_json=excluded.subs_json, not_available_json=excluded.not_available_json, beer_duty_user_id=excluded.beer_duty_user_id, ref_duty_user_id=excluded.ref_duty_user_id, updated_at=excluded.updated_at',
       )
-        .bind(id, body.eventId, body.formation, JSON.stringify(body.positions), JSON.stringify(body.subs), JSON.stringify(body.notAvailable), updatedAt, updatedAt)
+        .bind(
+          id,
+          body.eventId,
+          body.formation,
+          JSON.stringify(body.positions),
+          JSON.stringify(body.subs),
+          JSON.stringify(body.notAvailable),
+          body.beerDutyUserId ?? null,
+          body.refDutyUserId ?? null,
+          updatedAt,
+          updatedAt,
+        )
         .run();
 
-      return jsonResponse({ id, eventId: body.eventId, formation: body.formation, positions: body.positions, subs: body.subs, notAvailable: body.notAvailable, updatedAt }, 201, {
-        'Cache-Control': 'no-store',
-      });
+      return jsonResponse(
+        {
+          id,
+          eventId: body.eventId,
+          formation: body.formation,
+          positions: body.positions,
+          subs: body.subs,
+          notAvailable: body.notAvailable,
+          beerDutyUserId: body.beerDutyUserId ?? null,
+          refDutyUserId: body.refDutyUserId ?? null,
+          updatedAt,
+        },
+        201,
+        { 'Cache-Control': 'no-store' },
+      );
     }
 
     if (pathname === '/api/availability' && method === 'GET') {

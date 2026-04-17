@@ -154,6 +154,8 @@ export default function App() {
         positions: lineup.positions,
         subs: lineup.subs,
         notAvailable: lineup.notAvailable,
+        beerDutyUserId: lineup.beerDutyUserId,
+        refDutyUserId: lineup.refDutyUserId,
       });
     });
   };

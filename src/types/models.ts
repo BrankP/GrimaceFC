@@ -47,6 +47,8 @@ export interface Lineup {
   positions: Record<string, string | null>;
   subs: string[];
   notAvailable: string[];
+  beerDutyUserId?: string | null;
+  refDutyUserId?: string | null;
   updatedAt: string;
 }
 

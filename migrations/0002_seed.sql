@@ -28,12 +28,12 @@ INSERT OR REPLACE INTO fines (id, who_user_id, amount, reason, submitted_by_user
 ('fine-004', 'usr-005', 6, 'Missed sitter', 'usr-004', '2026-04-08T20:00:00Z'),
 ('fine-005', 'usr-002', 3, 'Own goal', 'usr-005', '2026-04-10T20:15:00Z');
 
-INSERT OR REPLACE INTO lineups (id, event_id, formation, positions_json, subs_json, not_available_json, updated_at) VALUES
-('lineup-evt-001', 'evt-001', '4-3-3', '{"GK":"usr-001","LB":"usr-002","LCB":"usr-003","RCB":"usr-004","RB":null,"LCM":"usr-005","CM":null,"RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-002","usr-003","usr-004","usr-005"]', '[]', '2026-04-17T12:00:00Z'),
-('lineup-evt-002', 'evt-002', '4-3-3', '{"GK":"usr-001","LB":null,"LCB":"usr-003","RCB":null,"RB":"usr-004","LCM":null,"CM":"usr-002","RCM":null,"LW":"usr-005","ST":null,"RW":null}', '["usr-004","usr-005"]', '["usr-003"]', '2026-04-17T12:00:00Z'),
-('lineup-evt-004', 'evt-004', '4-3-3', '{"GK":"usr-001","LB":"usr-002","LCB":null,"RCB":"usr-004","RB":null,"LCM":"usr-003","CM":"usr-005","RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-002","usr-003","usr-005"]', '[]', '2026-04-17T12:00:00Z'),
-('lineup-evt-005', 'evt-005', '4-3-3', '{"GK":null,"LB":null,"LCB":null,"RCB":null,"RB":null,"LCM":null,"CM":null,"RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-001","usr-003","usr-005"]', '["usr-002"]', '2026-04-17T12:00:00Z'),
-('lineup-evt-006', 'evt-006', '4-3-3', '{"GK":"usr-005","LB":null,"LCB":"usr-003","RCB":null,"RB":"usr-002","LCM":null,"CM":"usr-001","RCM":null,"LW":null,"ST":"usr-004","RW":null}', '["usr-001","usr-002"]', '["usr-004"]', '2026-04-17T12:00:00Z');
+INSERT OR REPLACE INTO lineups (id, event_id, formation, positions_json, subs_json, not_available_json, beer_duty_user_id, ref_duty_user_id, updated_at) VALUES
+('lineup-evt-001', 'evt-001', '4-3-3', '{"GK":"usr-001","LB":"usr-002","LCB":"usr-003","RCB":"usr-004","RB":null,"LCM":"usr-005","CM":null,"RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-002","usr-003","usr-004","usr-005"]', '[]', 'usr-001', 'usr-003', '2026-04-17T12:00:00Z'),
+('lineup-evt-002', 'evt-002', '4-3-3', '{"GK":"usr-001","LB":null,"LCB":"usr-003","RCB":null,"RB":"usr-004","LCM":null,"CM":"usr-002","RCM":null,"LW":"usr-005","ST":null,"RW":null}', '["usr-004","usr-005"]', '["usr-003"]', 'usr-002', 'usr-004', '2026-04-17T12:00:00Z'),
+('lineup-evt-004', 'evt-004', '4-3-3', '{"GK":"usr-001","LB":"usr-002","LCB":null,"RCB":"usr-004","RB":null,"LCM":"usr-003","CM":"usr-005","RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-002","usr-003","usr-005"]', '[]', 'usr-005', 'usr-001', '2026-04-17T12:00:00Z'),
+('lineup-evt-005', 'evt-005', '4-3-3', '{"GK":null,"LB":null,"LCB":null,"RCB":null,"RB":null,"LCM":null,"CM":null,"RCM":null,"LW":null,"ST":null,"RW":null}', '["usr-001","usr-003","usr-005"]', '["usr-002"]', 'usr-003', 'usr-002', '2026-04-17T12:00:00Z'),
+('lineup-evt-006', 'evt-006', '4-3-3', '{"GK":"usr-005","LB":null,"LCB":"usr-003","RCB":null,"RB":"usr-002","LCM":null,"CM":"usr-001","RCM":null,"LW":null,"ST":"usr-004","RW":null}', '["usr-001","usr-002"]', '["usr-004"]', 'usr-004', 'usr-005', '2026-04-17T12:00:00Z');
 
 INSERT OR REPLACE INTO availability (id, event_id, user_id, status, updated_at) VALUES
 ('avail-101', 'evt-001', 'usr-001', 'available', '2026-04-16T10:00:00Z'),

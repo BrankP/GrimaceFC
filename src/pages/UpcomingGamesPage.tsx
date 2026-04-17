@@ -24,6 +24,9 @@ export function UpcomingGamesPage() {
           <h3>{month}</h3>
           {events.map((event) => {
             const status = getAvailability(event.id, currentUser!.id);
+            const lineup = store.lineups.find((candidate) => candidate.eventId === event.id);
+            const beerDutyUserId = lineup?.beerDutyUserId ?? event.beerDutyUserId;
+            const refDutyUserId = lineup?.refDutyUserId ?? event.refDutyUserId;
             return (
               <article key={event.id} className={`card event-card ${event.isNextUp ? 'next-up' : ''}`}>
                 <strong>{event.eventType}</strong>
@@ -31,8 +34,8 @@ export function UpcomingGamesPage() {
                 {event.eventType === 'Game' ? (
                   <>
                     <p>{event.homeAway} Game vs {event.opponent}</p>
-                    <p>Beer Duty: {event.beerDutyUserId ? getUserName(event.beerDutyUserId) : 'Unassigned'}</p>
-                    <p>Ref Duty: {event.refDutyUserId ? getUserName(event.refDutyUserId) : 'Unassigned'}</p>
+                    <p>Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'}</p>
+                    <p>Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
                   </>
                 ) : (
                   <p>{event.occasion}</p>

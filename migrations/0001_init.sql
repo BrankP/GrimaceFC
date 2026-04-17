@@ -51,9 +51,13 @@ CREATE TABLE IF NOT EXISTS lineups (
   positions_json TEXT NOT NULL,
   subs_json TEXT NOT NULL,
   not_available_json TEXT NOT NULL,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY(event_id) REFERENCES events(id)
+  FOREIGN KEY(event_id) REFERENCES events(id),
+  FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+  FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS availability (
