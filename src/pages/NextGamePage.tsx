@@ -22,11 +22,11 @@ type DragDimension = 'primary' | 'beerDuty' | 'refDuty';
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
-const parseDragId = (dragId: string): { dimension: DragDimension; source: string; playerId: string } | null => {
+const parseDragId = (dragId: string): { dimension: DragDimension; playerId: string } | null => {
   const [dimension, source, playerId] = dragId.split('|');
   if (!dimension || !source || !playerId) return null;
   if (dimension !== 'primary' && dimension !== 'beerDuty' && dimension !== 'refDuty') return null;
-  return { dimension, source, playerId };
+  return { dimension, playerId };
 };
 
 function DraggablePlayer({ dragId, label }: { dragId: string; label: string }) {
@@ -59,9 +59,7 @@ function PositionDropSlot({
     <div className="position">
       <div ref={setNodeRef} style={POSITION_LAYOUT[position]} className={`position-inner ${isOver ? 'slot-over' : ''}`}>
         <small>{position}</small>
-        {playerId && (
-          <DraggablePlayer dragId={buildDragId('primary', dropId, playerId)} label={getUserName(playerId)} />
-        )}
+        {playerId && <DraggablePlayer dragId={buildDragId('primary', dropId, playerId)} label={getUserName(playerId)} />}
       </div>
     </div>
   );
@@ -155,7 +153,6 @@ export function NextGamePage() {
       if (draftLineup && computedLineup) {
         const draftTs = Date.parse(draftLineup.updatedAt);
         const computedTs = Date.parse(computedLineup.updatedAt);
-        // Do not overwrite optimistic state with older (possibly cached) server responses.
         if (Number.isFinite(draftTs) && Number.isFinite(computedTs) && computedTs < draftTs) return;
       }
       setDraftLineup(computedLineup);
@@ -163,24 +160,6 @@ export function NextGamePage() {
   }, [computedLineup, hasPendingSave, draftLineup]);
 
   const lineup = draftLineup ?? computedLineup;
-
-  const [draftLineup, setDraftLineup] = useState<Lineup | null>(null);
-  const [hasPendingSave, setHasPendingSave] = useState(false);
-
-  useEffect(() => {
-    if (!hasPendingSave) {
-      if (draftLineup && computedLineup) {
-        const draftTs = Date.parse(draftLineup.updatedAt);
-        const computedTs = Date.parse(computedLineup.updatedAt);
-        // Do not overwrite optimistic state with older (possibly cached) server responses.
-        if (Number.isFinite(draftTs) && Number.isFinite(computedTs) && computedTs < draftTs) return;
-      }
-      setDraftLineup(computedLineup);
-    }
-  }, [computedLineup, hasPendingSave, draftLineup]);
-
-  const lineup = draftLineup ?? computedLineup;
-
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 
   const handleDrop = ({ active, over }: DragEndEvent) => {
@@ -199,9 +178,9 @@ export function NextGamePage() {
       updatedAt: new Date().toISOString(),
     };
 
-    // Only primary placement is mutually exclusive (field/subs/not available)
     let draggedPrimaryStatus: 'available' | 'not_available' | null = null;
     let displacedUserId: string | null = null;
+
     if (isPrimaryTarget(target)) {
       removeFromPrimaryPlacement(next, parsed.playerId);
       const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
@@ -209,20 +188,14 @@ export function NextGamePage() {
       draggedPrimaryStatus = target === 'notAvailable' ? 'not_available' : 'available';
     }
 
-    // Duty assignment dimensions are independent and additive.
-    if (target === 'beerDuty') {
-      next.beerDutyUserId = parsed.playerId;
-    }
-    if (target === 'refDuty') {
-      next.refDutyUserId = parsed.playerId;
-    }
+    if (target === 'beerDuty') next.beerDutyUserId = parsed.playerId;
+    if (target === 'refDuty') next.refDutyUserId = parsed.playerId;
 
-    // If dragging from a specific duty token to primary space, only clear that duty token.
-    if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty') {
-      if (next.beerDutyUserId === parsed.playerId) next.beerDutyUserId = null;
+    if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty' && next.beerDutyUserId === parsed.playerId) {
+      next.beerDutyUserId = null;
     }
-    if (isPrimaryTarget(target) && parsed.dimension === 'refDuty') {
-      if (next.refDutyUserId === parsed.playerId) next.refDutyUserId = null;
+    if (isPrimaryTarget(target) && parsed.dimension === 'refDuty' && next.refDutyUserId === parsed.playerId) {
+      next.refDutyUserId = null;
     }
 
     setDraftLineup(next);
@@ -230,12 +203,8 @@ export function NextGamePage() {
     void (async () => {
       try {
         const writes: Array<Promise<void>> = [saveLineup(next)];
-        if (draggedPrimaryStatus) {
-          writes.push(setAvailability(nextGame.id, parsed.playerId, draggedPrimaryStatus));
-        }
-        if (displacedUserId) {
-          writes.push(setAvailability(nextGame.id, displacedUserId, 'available'));
-        }
+        if (draggedPrimaryStatus) writes.push(setAvailability(nextGame.id, parsed.playerId, draggedPrimaryStatus));
+        if (displacedUserId) writes.push(setAvailability(nextGame.id, displacedUserId, 'available'));
         await Promise.all(writes);
       } finally {
         setHasPendingSave(false);
