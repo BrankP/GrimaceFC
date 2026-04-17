@@ -13,7 +13,7 @@ import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPassc
 type AppState = {
   data: DataStore | null;
   currentUser: User | null;
-  upsertUserByName: (name: string) => Promise<void>;
+  upsertUserByName: (name: string, passcode: string) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
   addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
@@ -35,6 +35,7 @@ export default function App() {
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
   const [error, setError] = useState('');
+  const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const navigate = useNavigate();
@@ -92,13 +93,19 @@ export default function App() {
   };
 
   const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
+  const hasTeamPasscode = teamPasscode.trim().length > 0;
 
-  const upsertUserByName = async (name: string) => {
+  const upsertUserByName = async (name: string, passcode: string) => {
+    const trimmedPasscode = passcode.trim();
+    writeTeamPasscode(trimmedPasscode);
+    setTeamPasscode(trimmedPasscode);
+    setPasscodeInput(trimmedPasscode);
+
     const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
     writeCurrentUserId(user.id);
     setCurrentUserId(user.id);
     await refreshData(0, true);
-    navigate('/upcoming');
+    navigate('/chat');
   };
 
   const addMessage = async (text: string) => {
@@ -150,7 +157,9 @@ export default function App() {
   };
 
   if (!data && !error) return <main className="loading">Loading team data…</main>;
-  if (!currentUser && data) return <NameGate onSubmit={(name) => void upsertUserByName(name)} />;
+  if (data && (!currentUser || !hasTeamPasscode)) {
+    return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} />;
+  }
 
   return (
     <AppContext.Provider
@@ -184,7 +193,7 @@ export default function App() {
         {data && currentUser && (
           <main className="page-wrap">
             <Routes>
-              <Route path="/" element={<Navigate to="/upcoming" replace />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/upcoming" element={<UpcomingGamesPage />} />
               <Route path="/fines" element={<FinesPage />} />
               <Route path="/chat" element={<ChatPage />} />
@@ -199,7 +208,10 @@ export default function App() {
               className="card modal"
               onSubmit={(event) => {
                 event.preventDefault();
-                writeTeamPasscode(passcodeInput.trim());
+                const trimmed = passcodeInput.trim();
+                writeTeamPasscode(trimmed);
+                setTeamPasscode(trimmed);
+                setPasscodeInput(trimmed);
                 setShowPasscodeModal(false);
               }}
             >
