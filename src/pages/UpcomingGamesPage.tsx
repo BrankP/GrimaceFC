@@ -3,7 +3,7 @@ import { useAppState } from '../App';
 import { getMonthLabel } from '../utils/date';
 
 export function UpcomingGamesPage() {
-  const { data, currentUser, getAvailability, setAvailability } = useAppState();
+  const { data, currentUser, getAvailability, setAvailability, getUserName } = useAppState();
   const store = data!;
 
   const grouped = useMemo(() => {
@@ -31,7 +31,8 @@ export function UpcomingGamesPage() {
                 {event.eventType === 'Game' ? (
                   <>
                     <p>{event.homeAway} Game vs {event.opponent}</p>
-                    <p>Duties: {event.duties}</p>
+                    <p>Beer Duty: {event.beerDutyUserId ? getUserName(event.beerDutyUserId) : 'Unassigned'}</p>
+                    <p>Ref Duty: {event.refDutyUserId ? getUserName(event.refDutyUserId) : 'Unassigned'}</p>
                   </>
                 ) : (
                   <p>{event.occasion}</p>

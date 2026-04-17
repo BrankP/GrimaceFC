@@ -20,7 +20,7 @@ function DropSlot({ id, children, className = '' }: { id: string; children: Reac
 }
 
 export function NextGamePage() {
-  const { data, saveLineup, getDisplayName, getAvailability } = useAppState();
+  const { data, saveLineup, getUserName, getAvailability } = useAppState();
   const store = data!;
 
   const nextGame = useMemo(
@@ -92,6 +92,8 @@ export function NextGamePage() {
     <section>
       <h2>Next Game Lineup</h2>
       <p>{nextGame.opponent} • {new Date(nextGame.date).toLocaleDateString()}</p>
+      <p>Beer Duty: {nextGame.beerDutyUserId ? getUserName(nextGame.beerDutyUserId) : 'Unassigned'}</p>
+      <p>Ref Duty: {nextGame.refDutyUserId ? getUserName(nextGame.refDutyUserId) : 'Unassigned'}</p>
       <DndContext onDragEnd={handleDrop}>
         <div className="lineup-layout">
           <div className="field card">
@@ -100,7 +102,7 @@ export function NextGamePage() {
                 <div style={POSITION_LAYOUT[pos]} className="position-inner">
                   <small>{pos}</small>
                   {lineup.positions[pos] && (
-                    <DraggablePlayer playerId={lineup.positions[pos] as string} label={getDisplayName(lineup.positions[pos] as string)} />
+                    <DraggablePlayer playerId={lineup.positions[pos] as string} label={getUserName(lineup.positions[pos] as string)} />
                   )}
                 </div>
               </DropSlot>
@@ -110,13 +112,13 @@ export function NextGamePage() {
             <DropSlot id="subs" className="card">
               <h3>Subs</h3>
               <div className="chip-wrap">
-                {lineup.subs.map((id) => <DraggablePlayer key={id} playerId={id} label={getDisplayName(id)} />)}
+                {lineup.subs.map((id) => <DraggablePlayer key={id} playerId={id} label={getUserName(id)} />)}
               </div>
             </DropSlot>
             <DropSlot id="notAvailable" className="card">
               <h3>Not available</h3>
               <div className="chip-wrap">
-                {lineup.notAvailable.map((id) => <DraggablePlayer key={id} playerId={id} label={getDisplayName(id)} />)}
+                {lineup.notAvailable.map((id) => <DraggablePlayer key={id} playerId={id} label={getUserName(id)} />)}
               </div>
             </DropSlot>
           </aside>

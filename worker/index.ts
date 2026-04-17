@@ -58,8 +58,7 @@ const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].inc
 
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
-  const configuredPasscode = env.TEAM_PASSCODE;
-  if (!configuredPasscode) return null;
+  const configuredPasscode = env.TEAM_PASSCODE ?? 'nah';
   const provided = request.headers.get('x-team-passcode');
   if (!provided) return errorResponse('x-team-passcode header is required', 401);
   if (provided !== configuredPasscode) return errorResponse('Invalid team passcode', 403);
@@ -90,13 +89,16 @@ const schemaStatements = [
     date TEXT NOT NULL,
     day_of_week TEXT NOT NULL,
     home_away TEXT,
-    duties TEXT,
+    beer_duty_user_id TEXT,
+    ref_duty_user_id TEXT,
     location TEXT NOT NULL,
     opponent TEXT,
     occasion TEXT,
     team_name TEXT NOT NULL,
     is_next_up INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
+    FOREIGN KEY(ref_duty_user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,
@@ -145,12 +147,25 @@ const schemaStatements = [
 
 let schemaInitPromise: Promise<void> | null = null;
 
+const ensureEventDutyColumns = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(events)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('beer_duty_user_id')) {
+    await env.DB.prepare('ALTER TABLE events ADD COLUMN beer_duty_user_id TEXT').run();
+  }
+  if (!existingColumns.has('ref_duty_user_id')) {
+    await env.DB.prepare('ALTER TABLE events ADD COLUMN ref_duty_user_id TEXT').run();
+  }
+};
+
 const ensureSchema = async (env: Env) => {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
       for (const statement of schemaStatements) {
         await env.DB.prepare(statement).run();
       }
+      await ensureEventDutyColumns(env);
     })();
   }
   await schemaInitPromise;
@@ -184,7 +199,7 @@ async function handleApi(request: Request, env: Env) {
   try {
     if (pathname === '/api/events' && method === 'GET') {
       const { results } = await env.DB.prepare(
-        'SELECT id, event_type, date, day_of_week, home_away, duties, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
       ).all();
 
       return jsonResponse(
@@ -194,7 +209,8 @@ async function handleApi(request: Request, env: Env) {
           date: row.date,
           dayOfWeek: row.day_of_week,
           homeAway: row.home_away,
-          duties: row.duties,
+          beerDutyUserId: row.beer_duty_user_id,
+          refDutyUserId: row.ref_duty_user_id,
           location: row.location,
           opponent: row.opponent,
           occasion: row.occasion,
@@ -208,7 +224,7 @@ async function handleApi(request: Request, env: Env) {
 
     if (pathname === '/api/next-game' && method === 'GET') {
       const row = await env.DB.prepare(
-        "SELECT id, event_type, date, day_of_week, home_away, duties, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
       ).first();
       if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
       return jsonResponse(
@@ -218,7 +234,8 @@ async function handleApi(request: Request, env: Env) {
           date: row.date,
           dayOfWeek: row.day_of_week,
           homeAway: row.home_away,
-          duties: row.duties,
+          beerDutyUserId: row.beer_duty_user_id,
+          refDutyUserId: row.ref_duty_user_id,
           location: row.location,
           opponent: row.opponent,
           occasion: row.occasion,

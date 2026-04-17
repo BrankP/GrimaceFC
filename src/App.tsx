@@ -21,6 +21,7 @@ type AppState = {
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
   getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
   getDisplayName: (userId: string) => string;
+  getUserName: (userId: string) => string;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -162,6 +163,11 @@ export default function App() {
     return user?.nickname || user?.name || 'Unknown';
   };
 
+  const getUserName = (userId: string) => {
+    const user = data?.users.find((u) => u.id === userId);
+    return user?.name || 'Unknown';
+  };
+
   if (!data && !error) return <main className="loading">Loading team data…</main>;
   if (data && (!currentUser || !hasTeamPasscode)) {
     return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} serverError={error} />;
@@ -180,6 +186,7 @@ export default function App() {
         setAvailability,
         getAvailability,
         getDisplayName,
+        getUserName,
       }}
     >
       <div className="app-shell">
@@ -190,7 +197,7 @@ export default function App() {
           </div>
           <div className="row">
             <button className="secondary" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
-            <span className="badge">{currentUser ? getDisplayName(currentUser.id) : 'Guest'}</span>
+            <span className="badge">{currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>
 
