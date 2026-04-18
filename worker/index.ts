@@ -316,8 +316,14 @@ const moveRosterUserToBottom = async (env: Env, userId: string) => {
   const maxRow = await env.DB.prepare('SELECT COALESCE(MAX(roster_order), 0) AS max_order FROM ref_roster').first<{ max_order: number }>();
   const currentOrder = Number(row.roster_order);
   const maxOrder = Number(maxRow?.max_order ?? 0);
+  if (currentOrder === maxOrder) return;
 
-  await env.DB.prepare('UPDATE ref_roster SET roster_order = roster_order - 1 WHERE roster_order > ?1').bind(currentOrder).run();
+  // Move the current user out of range first so the unique index on roster_order
+  // cannot be violated during the shift-down update.
+  await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2').bind(maxOrder + 1000, userId).run();
+  await env.DB.prepare('UPDATE ref_roster SET roster_order = roster_order - 1 WHERE roster_order > ?1 AND roster_order <= ?2')
+    .bind(currentOrder, maxOrder)
+    .run();
   await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2').bind(maxOrder, userId).run();
 };
 
