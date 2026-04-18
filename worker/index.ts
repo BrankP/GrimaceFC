@@ -512,6 +512,10 @@ async function handleApi(request: Request, env: Env) {
       if (!state) return errorResponse('No next ref state found', 404);
       if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can pass', 403);
       if (state.status !== 'Pending Decision') return errorResponse('Cannot pass after duty has been accepted', 400);
+      const hasAlreadyPassed = await env.DB.prepare('SELECT id FROM next_ref_passes WHERE event_id = ?1 AND user_id = ?2 LIMIT 1')
+        .bind(body.eventId, body.userId)
+        .first<{ id: string }>();
+      if (hasAlreadyPassed) return errorResponse('This user has already passed for this away game', 400);
 
       const passedAt = nowIso();
       await env.DB.prepare('INSERT INTO next_ref_passes (id, event_id, user_id, passed_at) VALUES (?1, ?2, ?3, ?4)')

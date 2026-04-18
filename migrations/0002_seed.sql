@@ -64,3 +64,10 @@ INSERT OR REPLACE INTO ref_roster (user_id, roster_order, created_at) VALUES
 ('usr-011', 10, '2026-04-10T10:00:00Z'),
 ('usr-012', 11, '2026-04-10T10:00:00Z'),
 ('usr-013', 12, '2026-04-10T10:00:00Z');
+
+DELETE FROM next_ref_passes;
+DELETE FROM next_ref_history;
+DELETE FROM next_ref_state;
+
+INSERT OR REPLACE INTO next_ref_state (event_id, current_user_id, status, running_balance, accepted_at, updated_at, created_at) VALUES
+('evt-004', 'usr-001', 'Pending Decision', 0, NULL, '2026-04-17T12:00:00Z', '2026-04-17T12:00:00Z');

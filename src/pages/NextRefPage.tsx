@@ -39,7 +39,10 @@ export function NextRefPage() {
   const isAccepted = state?.status === 'Accepted';
   const canComplete = isAccepted;
 
-  const currentPassNames = useMemo(() => state?.passList.map((entry) => entry.name) ?? [], [state?.passList]);
+  const currentPassNames = useMemo(
+    () => Array.from(new Set(state?.passList.map((entry) => entry.name) ?? [])),
+    [state?.passList],
+  );
 
   const runAction = async (action: () => Promise<NextRefState>) => {
     setWorking(true);
