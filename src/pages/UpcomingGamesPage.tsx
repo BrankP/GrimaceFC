@@ -54,6 +54,10 @@ export function UpcomingGamesPage() {
                   <div className="sleek-event-date">
                     <strong>{new Date(event.date).getDate()}</strong>
                     <small>{new Intl.DateTimeFormat('en-US', { month: 'short', weekday: 'short' }).format(new Date(event.date))}</small>
+                    <p className="sleek-event-date-type">
+                      <span className="sleek-dot" aria-hidden="true">{indicator.dot}</span>
+                      <span>{indicator.label}</span>
+                    </p>
                   </div>
 
                   <div className="sleek-event-main">
@@ -79,26 +83,23 @@ export function UpcomingGamesPage() {
                     </div>
 
                     <p className="sleek-event-line">
-                      <span className="sleek-dot" aria-hidden="true">{indicator.dot}</span>
-                      <span>{indicator.label}</span>
-                      <span>•</span>
                       <span>{formatEventTime(event.date, event.eventType)}</span>
                       {loggedInUserHasDuty && <span className="duty-notice" title="You are assigned a duty for this event">⚠️</span>}
                     </p>
 
                     <p className="sleek-event-line"><strong>{event.eventType === 'Game' ? `vs ${event.opponent}` : event.occasion}</strong></p>
-
-                    {isExpanded && (
-                      <>
-                        <p className="sleek-event-line muted">Type: {event.eventType}</p>
-                        <p className="sleek-event-line muted">Location: {event.location}</p>
-                        <p className="sleek-event-line muted">Occasion: {event.occasion || 'N/A'}</p>
-                        <p className="sleek-event-line muted">Home/Away: {event.homeAway || 'N/A'}</p>
-                        <p className="sleek-event-line muted">Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'N/A'}</p>
-                        <p className="sleek-event-line muted">Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'N/A'}</p>
-                      </>
-                    )}
                   </div>
+
+                  {isExpanded && (
+                    <div className="sleek-event-expanded">
+                      <p className="sleek-event-line muted">Type: {event.eventType}</p>
+                      <p className="sleek-event-line muted">Location: {event.location}</p>
+                      <p className="sleek-event-line muted">Occasion: {event.occasion || 'N/A'}</p>
+                      <p className="sleek-event-line muted">Home/Away: {event.homeAway || 'N/A'}</p>
+                      <p className="sleek-event-line muted">Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'N/A'}</p>
+                      <p className="sleek-event-line muted">Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'N/A'}</p>
+                    </div>
+                  )}
                 </article>
               );
             })}
