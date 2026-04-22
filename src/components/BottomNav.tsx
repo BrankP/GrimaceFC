@@ -5,6 +5,7 @@ const links = [
   { to: '/fines', label: 'Fines' },
   { to: '/chat', label: 'Chat' },
   { to: '/game', label: 'Next Game' },
+  { to: '/next-ref', label: 'Next Ref' },
 ];
 
 export function BottomNav() {
