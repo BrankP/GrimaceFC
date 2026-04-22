@@ -201,7 +201,6 @@ export default function App() {
           </div>
           <div className="row">
             <button className="secondary header-chip" type="button" onClick={() => setShowFineModal(true)}>Fine Submission</button>
-            <button className="secondary header-chip" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
             <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>
