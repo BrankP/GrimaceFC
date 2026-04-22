@@ -420,7 +420,6 @@ const autoAdvanceCompletedNextRefCycle = async (env: Env) => {
 };
 
 const buildNextRefPayload = async (env: Env) => {
-  await normalizeRosterOrder(env);
   await autoAdvanceCompletedNextRefCycle(env);
   const trackedState = await getTrackedNextRefState(env);
   const nextAway = trackedState
