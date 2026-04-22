@@ -6,6 +6,7 @@ import { FinesPage } from './pages/FinesPage';
 import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
+import { NextRefPage } from './pages/NextRefPage';
 import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
 import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
@@ -13,7 +14,7 @@ import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPassc
 type AppState = {
   data: DataStore | null;
   currentUser: User | null;
-  upsertUserByName: (name: string) => Promise<void>;
+  upsertUserByName: (name: string, passcode: string) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
   addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
@@ -21,6 +22,7 @@ type AppState = {
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
   getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
   getDisplayName: (userId: string) => string;
+  getUserName: (userId: string) => string;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -35,8 +37,10 @@ export default function App() {
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
   const [error, setError] = useState('');
+  const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [showFineModal, setShowFineModal] = useState(false);
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -92,13 +96,25 @@ export default function App() {
   };
 
   const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
+  const hasTeamPasscode = teamPasscode.trim().length > 0;
 
-  const upsertUserByName = async (name: string) => {
-    const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
-    writeCurrentUserId(user.id);
-    setCurrentUserId(user.id);
-    await refreshData(0, true);
-    navigate('/upcoming');
+  const upsertUserByName = async (name: string, passcode: string) => {
+    try {
+      const trimmedPasscode = passcode.trim();
+      writeTeamPasscode(trimmedPasscode);
+      setTeamPasscode(trimmedPasscode);
+      setPasscodeInput(trimmedPasscode);
+
+      const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
+      writeCurrentUserId(user.id);
+      setCurrentUserId(user.id);
+      await refreshData(0, true);
+      navigate('/chat');
+      setError('');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to join team chat';
+      setError(message);
+    }
   };
 
   const addMessage = async (text: string) => {
@@ -140,6 +156,8 @@ export default function App() {
         positions: lineup.positions,
         subs: lineup.subs,
         notAvailable: lineup.notAvailable,
+        beerDutyUserId: lineup.beerDutyUserId,
+        refDutyUserId: lineup.refDutyUserId,
       });
     });
   };
@@ -149,8 +167,15 @@ export default function App() {
     return user?.nickname || user?.name || 'Unknown';
   };
 
+  const getUserName = (userId: string) => {
+    const user = data?.users.find((u) => u.id === userId);
+    return user?.name || 'Unknown';
+  };
+
   if (!data && !error) return <main className="loading">Loading team data…</main>;
-  if (!currentUser && data) return <NameGate onSubmit={(name) => void upsertUserByName(name)} />;
+  if (data && (!currentUser || !hasTeamPasscode)) {
+    return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} serverError={error} />;
+  }
 
   return (
     <AppContext.Provider
@@ -165,6 +190,7 @@ export default function App() {
         setAvailability,
         getAvailability,
         getDisplayName,
+        getUserName,
       }}
     >
       <div className="app-shell">
@@ -174,8 +200,9 @@ export default function App() {
             <p>Social Team Hub</p>
           </div>
           <div className="row">
-            <button className="secondary" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
-            <span className="badge">{currentUser ? getDisplayName(currentUser.id) : 'Guest'}</span>
+            <button className="secondary header-chip" type="button" onClick={() => setShowFineModal(true)}>Fine Submission</button>
+            <button className="secondary header-chip" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
+            <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>
 
@@ -184,11 +211,12 @@ export default function App() {
         {data && currentUser && (
           <main className="page-wrap">
             <Routes>
-              <Route path="/" element={<Navigate to="/upcoming" replace />} />
+              <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/upcoming" element={<UpcomingGamesPage />} />
               <Route path="/fines" element={<FinesPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/game" element={<NextGamePage />} />
+              <Route path="/next-ref" element={<NextRefPage />} />
             </Routes>
           </main>
         )}
@@ -199,7 +227,10 @@ export default function App() {
               className="card modal"
               onSubmit={(event) => {
                 event.preventDefault();
-                writeTeamPasscode(passcodeInput.trim());
+                const trimmed = passcodeInput.trim();
+                writeTeamPasscode(trimmed);
+                setTeamPasscode(trimmed);
+                setPasscodeInput(trimmed);
                 setShowPasscodeModal(false);
               }}
             >
@@ -214,6 +245,38 @@ export default function App() {
               <div className="row">
                 <button type="submit">Save</button>
                 <button className="secondary" type="button" onClick={() => setShowPasscodeModal(false)}>Close</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {showFineModal && currentUser && data && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <form
+              className="card modal"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+                void addFine({
+                  whoUserId: String(formData.get('whoUserId')),
+                  submittedByUserId: currentUser.id,
+                  amount: Number(formData.get('amount')),
+                  reason: String(formData.get('reason')),
+                }).then(() => {
+                  setShowFineModal(false);
+                  event.currentTarget.reset();
+                });
+              }}
+            >
+              <h3>Submit Fine</h3>
+              <select name="whoUserId" required>
+                {data.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
+              </select>
+              <input className="no-spinner" name="amount" type="number" min="0" step="0.5" placeholder="Amount" defaultValue={5} required />
+              <input name="reason" placeholder="Reason" required />
+              <div className="row">
+                <button type="submit">Save Fine</button>
+                <button type="button" className="secondary" onClick={() => setShowFineModal(false)}>Cancel</button>
               </div>
             </form>
           </div>
