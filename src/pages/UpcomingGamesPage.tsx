@@ -48,6 +48,7 @@ export function UpcomingGamesPage() {
               const loggedInUserHasDuty = Boolean(
                 currentUser && (beerDutyUserId === currentUser.id || refDutyUserId === currentUser.id),
               );
+              const statusIcon = loggedInUserHasDuty ? '⚠️' : indicator.dot;
 
               return (
                 <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} onClick={() => toggleExpanded(event.id)}>
@@ -55,39 +56,38 @@ export function UpcomingGamesPage() {
                     <strong>{new Date(event.date).getDate()}</strong>
                     <small>{new Intl.DateTimeFormat('en-US', { month: 'short', weekday: 'short' }).format(new Date(event.date))}</small>
                     <p className="sleek-event-date-type">
-                      <span className="sleek-dot" aria-hidden="true">{indicator.dot}</span>
+                      <span className="sleek-dot" aria-hidden="true">{statusIcon}</span>
                       <span>{indicator.label}</span>
                     </p>
-                    {loggedInUserHasDuty && <span className="duty-notice-date" title="You are assigned a duty for this event">⚠️</span>}
                   </div>
 
                   <div className="sleek-event-main">
-                    <div className="sleek-event-top-row" onClick={(e) => e.stopPropagation()}>
-                      <div className="row avail-row-top">
-                        <button
-                          type="button"
-                          className={`avail-pill ${status === 'available' ? 'active-yes' : ''}`}
-                          onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
-                          aria-label="Mark available"
-                        >
-                          ✅
-                        </button>
-                        <button
-                          type="button"
-                          className={`avail-pill ${status === 'not_available' ? 'active-no' : ''}`}
-                          onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
-                          aria-label="Mark not available"
-                        >
-                          ❌
-                        </button>
-                      </div>
-                    </div>
-
                     <p className="sleek-event-line">
                       <span>{formatEventTime(event.date, event.eventType)}</span>
                     </p>
 
                     <p className="sleek-event-line"><strong>{event.eventType === 'Game' ? `vs ${event.opponent}` : event.occasion}</strong></p>
+                  </div>
+
+                  <div className="sleek-event-attendance" onClick={(e) => e.stopPropagation()}>
+                    <div className="row avail-row-top">
+                      <button
+                        type="button"
+                        className={`avail-pill ${status === 'available' ? 'active-yes' : ''}`}
+                        onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
+                        aria-label="Mark available"
+                      >
+                        ✅
+                      </button>
+                      <button
+                        type="button"
+                        className={`avail-pill ${status === 'not_available' ? 'active-no' : ''}`}
+                        onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
+                        aria-label="Mark not available"
+                      >
+                        ❌
+                      </button>
+                    </div>
                   </div>
 
                   {isExpanded && (

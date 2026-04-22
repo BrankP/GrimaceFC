@@ -26,7 +26,7 @@ h1,h2,h3,p { margin: 0 0 .5rem; }
 .sleek-list { border-radius: 12px; overflow: hidden; border: 1px solid #3b2d61; background: #1a1031; }
 .sleek-event-row {
   display: grid;
-  grid-template-columns: 72px 1fr;
+  grid-template-columns: 72px 1fr auto;
   gap: .65rem;
   align-items: start;
   padding: .7rem .8rem;
@@ -41,12 +41,12 @@ h1,h2,h3,p { margin: 0 0 .5rem; }
 .sleek-event-date small { color: #c8bce8; text-transform: uppercase; font-size: .7rem; letter-spacing: .04em; }
 .sleek-event-date-type { display: flex; align-items: center; gap: .3rem; color: #c7bbe9; font-size: .8rem; margin: 0; }
 .sleek-event-main { display: grid; gap: .22rem; align-content: start; }
+.sleek-event-attendance { display: flex; justify-content: flex-end; align-items: flex-start; }
 .sleek-event-top-row { display: flex; justify-content: flex-end; }
 .sleek-event-line { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: .94rem; line-height: 1.3; }
 .sleek-event-line.muted { color: #c5b9e7; font-size: .86rem; }
 .sleek-dot { font-size: 1rem; }
 .duty-notice { margin-left: auto; }
-.duty-notice-date { font-size: .9rem; line-height: 1; }
 .sleek-event-expanded {
   grid-column: 1 / -1;
   border-top: 1px solid #332456;
@@ -66,11 +66,11 @@ button.secondary { background: #39245f; }
 .avail-row { margin-top: .55rem; }
 .avail-row-top { justify-content: flex-end; }
 .avail-pill {
-  min-height: 28px;
-  min-width: 34px;
-  padding: .15rem .35rem;
+  min-height: 34px;
+  min-width: 42px;
+  padding: .25rem .45rem;
   border-radius: 999px;
-  font-size: .9rem;
+  font-size: 1.05rem;
   background: #2a1b47;
   border: 1px solid #4f3d7c;
 }
