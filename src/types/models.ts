@@ -15,7 +15,8 @@ export interface TeamEvent {
   date: string;
   dayOfWeek: string;
   homeAway?: 'Home' | 'Away' | null;
-  duties?: string | null;
+  beerDutyUserId?: string | null;
+  refDutyUserId?: string | null;
   location: string;
   opponent?: string | null;
   occasion?: string | null;
@@ -46,6 +47,8 @@ export interface Lineup {
   positions: Record<string, string | null>;
   subs: string[];
   notAvailable: string[];
+  beerDutyUserId?: string | null;
+  refDutyUserId?: string | null;
   updatedAt: string;
 }
 
@@ -64,4 +67,41 @@ export interface DataStore {
   messages: Message[];
   lineups: Lineup[];
   availability: Availability[];
+}
+
+export type NextRefStatus = 'Pending Decision' | 'Accepted';
+
+export interface NextRefPassEntry {
+  userId: string;
+  name: string;
+  passedAt: string;
+}
+
+export interface NextRefRosterEntry {
+  userId: string;
+  name: string;
+  order: number;
+}
+
+export interface NextRefState {
+  event: TeamEvent | null;
+  currentRefUserId: string | null;
+  currentRefName: string | null;
+  status: NextRefStatus | null;
+  runningBalance: number;
+  passList: NextRefPassEntry[];
+  roster: NextRefRosterEntry[];
+}
+
+export interface NextRefHistoryEntry {
+  eventId: string;
+  eventDate: string;
+  opponent: string | null;
+  location: string;
+  refereeUserId: string;
+  refereeName: string;
+  finalBalance: number;
+  passed: NextRefPassEntry[];
+  acceptedAt: string | null;
+  completedAt: string;
 }
