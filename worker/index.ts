@@ -310,6 +310,14 @@ const getTopRosterUser = (env: Env) =>
     'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
   ).first<{ user_id: string; name: string; roster_order: number }>();
 
+const getNextEligibleRosterUser = async (env: Env, eventId: string) => {
+  const eligible = await env.DB.prepare(
+    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE ref_roster.user_id NOT IN (SELECT user_id FROM next_ref_passes WHERE event_id = ?1) ORDER BY ref_roster.roster_order ASC LIMIT 1',
+  ).bind(eventId).first<{ user_id: string; name: string; roster_order: number }>();
+  if (eligible) return eligible;
+  return getTopRosterUser(env);
+};
+
 const writeRosterOrder = async (env: Env, orderedUserIds: string[]) => {
   for (let index = 0; index < orderedUserIds.length; index += 1) {
     await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
@@ -412,7 +420,6 @@ const autoAdvanceCompletedNextRefCycle = async (env: Env) => {
 };
 
 const buildNextRefPayload = async (env: Env) => {
-  await normalizeRosterOrder(env);
   await autoAdvanceCompletedNextRefCycle(env);
   const trackedState = await getTrackedNextRefState(env);
   const nextAway = trackedState
@@ -437,6 +444,15 @@ const buildNextRefPayload = async (env: Env) => {
   }
 
   const state = trackedState ?? (await ensureNextRefStateForEvent(env, nextAway.id));
+  if (state && state.status === 'Pending Decision') {
+    const eligible = await getNextEligibleRosterUser(env, nextAway.id);
+    if (eligible && eligible.user_id !== state.current_user_id) {
+      await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+        .bind(eligible.user_id, nowIso(), nextAway.id)
+        .run();
+      state.current_user_id = eligible.user_id;
+    }
+  }
   const passRows = await env.DB.prepare(
     'SELECT next_ref_passes.user_id AS user_id, users.name AS name, next_ref_passes.passed_at AS passed_at FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC',
   ).bind(nextAway.id).all<{ user_id: string; name: string; passed_at: string }>();
@@ -591,13 +607,13 @@ async function handleApi(request: Request, env: Env) {
 
       await moveRosterUserToBottom(env, body.userId);
       await normalizeRosterOrder(env);
-      const nextTop = await getTopRosterUser(env);
-      if (!nextTop) return errorResponse('Ref roster is empty', 400);
+      const nextEligible = await getNextEligibleRosterUser(env, body.eventId);
+      if (!nextEligible) return errorResponse('Ref roster is empty', 400);
 
       await env.DB.prepare(
         'UPDATE next_ref_state SET current_user_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
       )
-        .bind(nextTop.user_id, 'Pending Decision', nowIso(), body.eventId)
+        .bind(nextEligible.user_id, 'Pending Decision', nowIso(), body.eventId)
         .run();
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
