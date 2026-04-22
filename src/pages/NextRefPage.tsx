@@ -72,23 +72,31 @@ export function NextRefPage() {
       {error && <p className="error">{error}</p>}
 
       {state?.event ? (
-        <article className="card next-ref-highlight">
-          <p className="next-ref-subtitle">Next Away Game</p>
-          <h3>{state.event.opponent ? `vs ${state.event.opponent}` : 'Away Match'}</h3>
-          <p>{formatDateTime(state.event.date)} • {state.event.location}</p>
+        <article className="card next-ref-summary">
+          <div className="next-ref-summary-grid">
+            <div>
+              <p className="next-ref-subtitle">Next Away Game</p>
+              <h3>{state.event.opponent ? `vs ${state.event.opponent}` : 'Away Match'}</h3>
+              <p>{formatDateTime(state.event.date)} • {state.event.location}</p>
+            </div>
+            <div>
+              <p className="next-ref-subtitle">Current Referee</p>
+              <h3>{state?.currentRefName ?? 'Unassigned'}</h3>
+              <p className={`status-badge ${isAccepted ? 'accepted' : 'pending'}`}>{state?.status ?? 'Pending Decision'}</p>
+            </div>
+            <div>
+              <p className="next-ref-subtitle">Running Balance</p>
+              <p className="next-ref-balance">${state?.runningBalance ?? 0}</p>
+              {currentPassNames.length > 0 && <p className="next-ref-owed">Owed by: {currentPassNames.join(', ')}</p>}
+            </div>
+          </div>
         </article>
       ) : (
         <p className="card">No upcoming away games found.</p>
       )}
 
-      <article className="card next-ref-current">
-        <p className="next-ref-subtitle">Current Referee</p>
-        <h3>{state?.currentRefName ?? 'Unassigned'}</h3>
-        <p className={`status-badge ${isAccepted ? 'accepted' : 'pending'}`}>{state?.status ?? 'Pending Decision'}</p>
-        <p><strong>Running Balance:</strong> ${state?.runningBalance ?? 0}</p>
-        {currentPassNames.length > 0 && <p><strong>Currently owed:</strong> {currentPassNames.join(', ')}</p>}
-
-        <div className="row">
+      <article className="card next-ref-actions">
+        <div className="next-ref-action-grid">
           <button
             type="button"
             disabled={!isCurrentRef || isWorking || !state?.event || isAccepted}

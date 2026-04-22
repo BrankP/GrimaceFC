@@ -50,7 +50,7 @@ export function UpcomingGamesPage() {
               );
 
               return (
-                <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''}`} onClick={() => toggleExpanded(event.id)}>
+                <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} onClick={() => toggleExpanded(event.id)}>
                   <div className="sleek-event-date">
                     <strong>{new Date(event.date).getDate()}</strong>
                     <small>{new Intl.DateTimeFormat('en-US', { month: 'short', weekday: 'short' }).format(new Date(event.date))}</small>
@@ -58,6 +58,7 @@ export function UpcomingGamesPage() {
                       <span className="sleek-dot" aria-hidden="true">{indicator.dot}</span>
                       <span>{indicator.label}</span>
                     </p>
+                    {loggedInUserHasDuty && <span className="duty-notice-date" title="You are assigned a duty for this event">⚠️</span>}
                   </div>
 
                   <div className="sleek-event-main">
@@ -69,7 +70,7 @@ export function UpcomingGamesPage() {
                           onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
                           aria-label="Mark available"
                         >
-                          ✅ Available
+                          ✅
                         </button>
                         <button
                           type="button"
@@ -77,14 +78,13 @@ export function UpcomingGamesPage() {
                           onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
                           aria-label="Mark not available"
                         >
-                          ❌ Not available
+                          ❌
                         </button>
                       </div>
                     </div>
 
                     <p className="sleek-event-line">
                       <span>{formatEventTime(event.date, event.eventType)}</span>
-                      {loggedInUserHasDuty && <span className="duty-notice" title="You are assigned a duty for this event">⚠️</span>}
                     </p>
 
                     <p className="sleek-event-line"><strong>{event.eventType === 'Game' ? `vs ${event.opponent}` : event.occasion}</strong></p>
