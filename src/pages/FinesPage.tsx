@@ -1,91 +1,67 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAppState } from '../App';
 
 export function FinesPage() {
-  const { data, addFine, getDisplayName, currentUser } = useAppState();
+  const { data, getUserName, currentUser } = useAppState();
   const store = data!;
-  const [isModalOpen, setModalOpen] = useState(false);
   const [whoFilter, setWhoFilter] = useState('');
-  const [submitterFilter, setSubmitterFilter] = useState('');
-  const [maxAmount, setMaxAmount] = useState<number | ''>('');
 
   const filtered = useMemo(
     () =>
       store.fines.filter((fine) => {
         if (whoFilter && fine.whoUserId !== whoFilter) return false;
-        if (submitterFilter && fine.submittedByUserId !== submitterFilter) return false;
-        if (maxAmount !== '' && fine.amount > maxAmount) return false;
         return true;
       }),
-    [store.fines, whoFilter, submitterFilter, maxAmount],
+    [store.fines, whoFilter],
   );
 
-  const onSubmitFine = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    void addFine({
-      whoUserId: String(formData.get('whoUserId')),
-      submittedByUserId: String(formData.get('submittedByUserId')),
-      amount: Number(formData.get('amount')),
-      reason: String(formData.get('reason')),
-    });
-    setModalOpen(false);
-    event.currentTarget.reset();
+  const activeUserTotalOwed = useMemo(() => {
+    if (!currentUser) return 0;
+    return store.fines
+      .filter((fine) => fine.whoUserId === currentUser.id)
+      .reduce((total, fine) => total + fine.amount, 0);
+  }, [store.fines, currentUser]);
+
+  const activeUserFineCount = useMemo(() => {
+    if (!currentUser) return 0;
+    return store.fines.filter((fine) => fine.whoUserId === currentUser.id).length;
+  }, [store.fines, currentUser]);
+
+  const formatTimeSince = (isoDate: string) => {
+    const deltaMs = Date.now() - new Date(isoDate).getTime();
+    const hours = Math.floor(deltaMs / (1000 * 60 * 60));
+    if (hours < 1) return 'just now';
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
   };
 
   return (
     <section>
       <h2>Fines</h2>
-      <div className="row">
-        <button onClick={() => setModalOpen(true)}>Fine Submission</button>
-        <button className="secondary">Filter</button>
-      </div>
+      {currentUser && (
+        <p className="card">
+          <strong>You owe ${activeUserTotalOwed.toFixed(2)}</strong> for <strong>{activeUserFineCount} fines</strong>
+        </p>
+      )}
       <div className="card filters">
         <select value={whoFilter} onChange={(e) => setWhoFilter(e.target.value)}>
           <option value="">All players</option>
-          {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
+          {store.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
         </select>
-        <select value={submitterFilter} onChange={(e) => setSubmitterFilter(e.target.value)}>
-          <option value="">All submitters</option>
-          {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
-        </select>
-        <input
-          type="number"
-          value={maxAmount}
-          onChange={(e) => setMaxAmount(e.target.value ? Number(e.target.value) : '')}
-          placeholder="Max amount"
-        />
       </div>
-      <div className="stack">
+      <div className="stack fines-list">
         {filtered.map((fine) => (
-          <article className="card" key={fine.id}>
-            <p><strong>Who:</strong> {getDisplayName(fine.whoUserId)}</p>
-            <p><strong>Amount:</strong> ${fine.amount.toFixed(2)}</p>
-            <p><strong>Fuck up:</strong> {fine.reason}</p>
-            <p><strong>Submitted by:</strong> {getDisplayName(fine.submittedByUserId)}</p>
+          <article className="fine-row" key={fine.id}>
+            <div>
+              <p className="fine-row-name">{getUserName(fine.whoUserId)}</p>
+              <p className="fine-row-reason">{fine.reason}</p>
+              <p className="fine-row-meta">Added by {getUserName(fine.submittedByUserId)} • {formatTimeSince(fine.submittedAt)}</p>
+            </div>
+            <p className="fine-row-amount">${fine.amount.toFixed(0)}</p>
           </article>
         ))}
       </div>
-
-      {isModalOpen && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <form className="card modal" onSubmit={onSubmitFine}>
-            <h3>Submit Fine</h3>
-            <select name="whoUserId" required>
-              {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
-            </select>
-            <input name="amount" type="number" min="0" step="0.5" placeholder="Amount" required />
-            <input name="reason" placeholder="Reason" required />
-            <select name="submittedByUserId" defaultValue={currentUser?.id} required>
-              {store.users.map((user) => <option key={user.id} value={user.id}>{getDisplayName(user.id)}</option>)}
-            </select>
-            <div className="row">
-              <button type="submit">Save Fine</button>
-              <button type="button" className="secondary" onClick={() => setModalOpen(false)}>Cancel</button>
-            </div>
-          </form>
-        </div>
-      )}
     </section>
   );
 }

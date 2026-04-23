@@ -1,4 +1,4 @@
-import type { AvailabilityStatus, DataStore, Fine, Lineup, Message, TeamEvent, User } from '../types/models';
+import type { AvailabilityStatus, DataStore, Fine, Lineup, Message, NextRefHistoryEntry, NextRefState, TeamEvent, User } from '../types/models';
 import { readTeamPasscode } from '../utils/storage';
 
 const parse = async <T,>(response: Response): Promise<T> => {
@@ -52,3 +52,12 @@ export const postLineup = (payload: Omit<Lineup, 'id' | 'updatedAt'> & { id?: st
 
 export const postAvailability = (payload: { eventId: string; userId: string; status: AvailabilityStatus }) =>
   api<DataStore['availability'][number]>('/availability', { method: 'POST', body: JSON.stringify(payload) });
+
+export const getNextRef = () => api<NextRefState>('/next-ref');
+export const passNextRef = (payload: { userId: string; eventId: string }) =>
+  api<NextRefState>('/next-ref/pass', { method: 'POST', body: JSON.stringify(payload) });
+export const acceptNextRef = (payload: { userId: string; eventId: string }) =>
+  api<NextRefState>('/next-ref/accept', { method: 'POST', body: JSON.stringify(payload) });
+export const completeNextRef = (payload: { eventId: string }) =>
+  api<NextRefState>('/next-ref/complete', { method: 'POST', body: JSON.stringify(payload) });
+export const getNextRefHistory = () => api<NextRefHistoryEntry[]>('/next-ref/history');
