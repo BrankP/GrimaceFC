@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAppState } from '../App';
 import { acceptNextRef, completeNextRef, getNextRef, getNextRefHistory, passNextRef } from '../services/dataService';
 import type { NextRefHistoryEntry, NextRefState } from '../types/models';
 
@@ -7,11 +6,11 @@ const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
 export function NextRefPage() {
-  const { currentUser } = useAppState();
   const [state, setState] = useState<NextRefState | null>(null);
   const [history, setHistory] = useState<NextRefHistoryEntry[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [isWorking, setWorking] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
 
   const refresh = async () => {
@@ -35,17 +34,16 @@ export function NextRefPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const isCurrentRef = Boolean(currentUser && state?.currentRefUserId === currentUser.id);
   const isAccepted = state?.status === 'Accepted';
-  const canComplete = isAccepted;
 
   const currentPassNames = useMemo(
     () => Array.from(new Set(state?.passList.map((entry) => entry.name) ?? [])),
     [state?.passList],
   );
 
-  const runAction = async (action: () => Promise<NextRefState>) => {
+  const runAction = async (actionType: 'pass' | 'accept' | 'complete', action: () => Promise<NextRefState>) => {
     setWorking(true);
+    setPendingAction(actionType);
     try {
       const nextState = await action();
       setState(nextState);
@@ -54,6 +52,7 @@ export function NextRefPage() {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setWorking(false);
+      setPendingAction(null);
     }
   };
 
@@ -99,37 +98,39 @@ export function NextRefPage() {
         <div className="next-ref-action-grid">
           <button
             type="button"
-            disabled={!isCurrentRef || isWorking || !state?.event || isAccepted}
+            className={`next-ref-action-btn ${pendingAction === 'pass' ? 'is-pending' : ''}`}
+            disabled={isWorking || !state?.event || !state?.currentRefUserId}
             onClick={() => {
-              if (!currentUser || !state?.event) return;
-              void runAction(() => passNextRef({ userId: currentUser.id, eventId: state.event!.id }));
+              if (!state?.event || !state.currentRefUserId) return;
+              void runAction('pass', () => passNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
-            Pass Duty
+            {pendingAction === 'pass' ? 'Passing…' : 'Pass Duty'}
           </button>
           <button
             type="button"
-            disabled={!isCurrentRef || isWorking || !state?.event || isAccepted}
+            className={`next-ref-action-btn ${pendingAction === 'accept' ? 'is-pending' : ''}`}
+            disabled={isWorking || !state?.event || !state?.currentRefUserId}
             onClick={() => {
-              if (!currentUser || !state?.event) return;
-              void runAction(() => acceptNextRef({ userId: currentUser.id, eventId: state.event!.id }));
+              if (!state?.event || !state.currentRefUserId) return;
+              void runAction('accept', () => acceptNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
-            Accept Duty
+            {pendingAction === 'accept' ? 'Accepting…' : 'Accept Duty'}
           </button>
         </div>
 
         <div className="row">
           <button
             type="button"
-            className="secondary"
-            disabled={!canComplete || !state?.event || isWorking}
+            className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''}`}
+            disabled={!state?.event || isWorking}
             onClick={() => {
               if (!state?.event) return;
-              void runAction(() => completeNextRef({ eventId: state.event!.id }));
+              void runAction('complete', () => completeNextRef({ eventId: state.event!.id }));
             }}
           >
-            Complete Duty
+            {pendingAction === 'complete' ? 'Completing…' : 'Complete Duty'}
           </button>
         </div>
       </article>
