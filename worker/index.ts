@@ -244,7 +244,7 @@ const ensureDefaultDutyAssignments = async (env: Env) => {
   let idx = 0;
   for (const event of events.results) {
     const beerDutyUserId = event.beer_duty_user_id ?? userIds[idx % userIds.length];
-    const refDutyUserId = event.home_away === 'Away' ? event.ref_duty_user_id ?? userIds[(idx + 1) % userIds.length] ?? beerDutyUserId : null;
+    const refDutyUserId = event.home_away === 'Away' ? event.ref_duty_user_id ?? null : null;
     idx += 1;
 
     await env.DB.prepare('UPDATE events SET beer_duty_user_id = ?1, ref_duty_user_id = ?2 WHERE id = ?3')
@@ -318,7 +318,7 @@ type NextAwayEventRow = {
 
 const getNextAwayEvent = (env: Env) =>
   env.DB.prepare(
-    "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND datetime(date) >= datetime('now') ORDER BY date ASC LIMIT 1",
+    "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND ref_duty_user_id IS NULL AND datetime(date) >= datetime('now') ORDER BY date ASC LIMIT 1",
   ).first<NextAwayEventRow>();
 
 const getTopRosterUser = (env: Env) =>
