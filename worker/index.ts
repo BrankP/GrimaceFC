@@ -312,7 +312,7 @@ const getTopRosterUser = (env: Env) =>
 
 const getNextEligibleRosterUser = async (env: Env, eventId: string) => {
   const eligible = await env.DB.prepare(
-    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE ref_roster.user_id NOT IN (SELECT user_id FROM next_ref_passes WHERE event_id = ?1) ORDER BY ref_roster.roster_order ASC LIMIT 1',
+    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE NOT EXISTS (SELECT 1 FROM next_ref_passes p WHERE p.event_id = ?1 AND p.user_id = ref_roster.user_id) ORDER BY ref_roster.roster_order ASC LIMIT 1',
   ).bind(eventId).first<{ user_id: string; name: string; roster_order: number }>();
   if (eligible) return eligible;
   return getTopRosterUser(env);
@@ -417,6 +417,19 @@ const autoAdvanceCompletedNextRefCycle = async (env: Env) => {
     if (!(tracked.status === 'Accepted' && hasPassed)) break;
     await finalizeNextRefCycle(env, tracked);
   }
+};
+
+const alignPendingCurrentRef = async (
+  env: Env,
+  state: { event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted' },
+) => {
+  if (state.status !== 'Pending Decision') return state;
+  const eligible = await getNextEligibleRosterUser(env, state.event_id);
+  if (!eligible || eligible.user_id === state.current_user_id) return state;
+  await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+    .bind(eligible.user_id, nowIso(), state.event_id)
+    .run();
+  return { ...state, current_user_id: eligible.user_id };
 };
 
 const buildNextRefPayload = async (env: Env) => {
@@ -591,7 +604,8 @@ async function handleApi(request: Request, env: Env) {
       const body = (await request.json()) as { userId?: string; eventId?: string };
       if (!body.userId || !body.eventId) return errorResponse('userId and eventId are required');
 
-      const state = await ensureNextRefStateForEvent(env, body.eventId);
+      const rawState = await ensureNextRefStateForEvent(env, body.eventId);
+      const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
       if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can pass', 403);
       if (state.status !== 'Pending Decision') return errorResponse('Cannot pass after duty has been accepted', 400);
@@ -623,7 +637,8 @@ async function handleApi(request: Request, env: Env) {
       const body = (await request.json()) as { userId?: string; eventId?: string };
       if (!body.userId || !body.eventId) return errorResponse('userId and eventId are required');
 
-      const state = await ensureNextRefStateForEvent(env, body.eventId);
+      const rawState = await ensureNextRefStateForEvent(env, body.eventId);
+      const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
       if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can accept', 403);
 
