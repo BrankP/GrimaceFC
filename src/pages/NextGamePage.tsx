@@ -29,17 +29,24 @@ const parseDragId = (dragId: string): { dimension: DragDimension; source: string
   return { dimension, source, playerId };
 };
 
-function DraggablePlayer({ dragId, label }: { dragId: string; label: string }) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: dragId });
+function DraggablePlayer({ dragId, label, canDrag = true }: { dragId: string; label: string; canDrag?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: dragId, disabled: !canDrag });
   return (
-    <button ref={setNodeRef} style={{ transform: CSS.Translate.toString(transform) }} className="chip" {...listeners} {...attributes}>
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={{ transform: CSS.Translate.toString(transform) }}
+      className={`chip ${canDrag ? '' : 'chip-static'}`}
+      {...(canDrag ? listeners : {})}
+      {...(canDrag ? attributes : {})}
+    >
       {label}
     </button>
   );
 }
 
-function DropSlot({ id, children, className = '' }: { id: DropTarget; children: ReactNode; className?: string }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+function DropSlot({ id, children, className = '', canDrop = true }: { id: DropTarget; children: ReactNode; className?: string; canDrop?: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id, disabled: !canDrop });
   return <div ref={setNodeRef} className={`${className} ${isOver ? 'slot-over' : ''}`}>{children}</div>;
 }
 
@@ -47,19 +54,23 @@ function PositionDropSlot({
   position,
   playerId,
   getUserName,
+  canDrop,
+  canDrag,
 }: {
   position: string;
   playerId: string | null;
   getUserName: (userId: string) => string;
+  canDrop: boolean;
+  canDrag: boolean;
 }) {
   const dropId: DropTarget = `position:${position}`;
-  const { setNodeRef, isOver } = useDroppable({ id: dropId });
+  const { setNodeRef, isOver } = useDroppable({ id: dropId, disabled: !canDrop });
 
   return (
     <div className="position">
       <div ref={setNodeRef} style={POSITION_LAYOUT[position]} className={`position-inner ${isOver ? 'slot-over' : ''}`}>
         <small>{position}</small>
-        {playerId && <DraggablePlayer dragId={buildDragId('primary', dropId, playerId)} label={getUserName(playerId)} />}
+        {playerId && <DraggablePlayer dragId={buildDragId('primary', dropId, playerId)} label={getUserName(playerId)} canDrag={canDrag} />}
       </div>
     </div>
   );
@@ -99,7 +110,7 @@ const isPrimaryTarget = (target: DropTarget): target is PrimaryTarget =>
   target.startsWith('position:') || target === 'subs' || target === 'notAvailable';
 
 export function NextGamePage() {
-  const { data, saveLineup, getUserName, getAvailability, setAvailability } = useAppState();
+  const { data, saveLineup, getUserName, getAvailability, setAvailability, canEditLineup } = useAppState();
   const store = data!;
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -164,6 +175,7 @@ export function NextGamePage() {
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 
   const handleDrop = ({ active, over }: DragEndEvent) => {
+    if (!canEditLineup) return;
     if (!over) return;
     const parsed = parseDragId(String(active.id));
     if (!parsed) return;
@@ -235,49 +247,57 @@ export function NextGamePage() {
     <section>
       <h2>Next Game Lineup</h2>
       <p>{nextGame.opponent} • {new Date(nextGame.date).toLocaleDateString()}</p>
+      {!canEditLineup && <p className="muted">View mode: lineup drag-and-drop is disabled.</p>}
       <DndContext onDragEnd={handleDrop} collisionDetection={closestCenter} sensors={sensors}>
         <div className="lineup-layout">
-          <div className="field card">
+          <div className={`field card ${canEditLineup ? '' : 'field-readonly'}`}>
             {FORMATION_433.map((pos) => (
-              <PositionDropSlot key={pos} position={pos} playerId={lineup.positions[pos] as string | null} getUserName={getUserName} />
+              <PositionDropSlot
+                key={pos}
+                position={pos}
+                playerId={lineup.positions[pos] as string | null}
+                getUserName={getUserName}
+                canDrop={canEditLineup}
+                canDrag={canEditLineup}
+              />
             ))}
           </div>
           <aside className="stack">
-            <DropSlot id="beerDuty" className="card">
+            <DropSlot id="beerDuty" className="card" canDrop={canEditLineup}>
               <h3>Beer Duty</h3>
               <div className="chip-wrap">
                 {lineup.beerDutyUserId ? (
-                  <DraggablePlayer dragId={buildDragId('beerDuty', 'beerDuty', lineup.beerDutyUserId)} label={getUserName(lineup.beerDutyUserId)} />
+                  <DraggablePlayer dragId={buildDragId('beerDuty', 'beerDuty', lineup.beerDutyUserId)} label={getUserName(lineup.beerDutyUserId)} canDrag={canEditLineup} />
                 ) : (
                   <small>Unassigned</small>
                 )}
               </div>
             </DropSlot>
             {showRefDuty && (
-              <DropSlot id="refDuty" className="card">
+              <DropSlot id="refDuty" className="card" canDrop={canEditLineup}>
                 <h3>Ref Duty</h3>
                 <div className="chip-wrap">
                   {lineup.refDutyUserId ? (
-                    <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} />
+                    <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} canDrag={canEditLineup} />
                   ) : (
                     <small>Unassigned</small>
                   )}
                 </div>
               </DropSlot>
             )}
-            <DropSlot id="subs" className="card">
+            <DropSlot id="subs" className="card" canDrop={canEditLineup}>
               <h3>Subs</h3>
               <div className="chip-wrap">
                 {lineup.subs.map((id) => (
-                  <DraggablePlayer key={`subs-${id}`} dragId={buildDragId('primary', 'subs', id)} label={getUserName(id)} />
+                  <DraggablePlayer key={`subs-${id}`} dragId={buildDragId('primary', 'subs', id)} label={getUserName(id)} canDrag={canEditLineup} />
                 ))}
               </div>
             </DropSlot>
-            <DropSlot id="notAvailable" className="card">
+            <DropSlot id="notAvailable" className="card" canDrop={canEditLineup}>
               <h3>Not available</h3>
               <div className="chip-wrap">
                 {lineup.notAvailable.map((id) => (
-                  <DraggablePlayer key={`notavail-${id}`} dragId={buildDragId('primary', 'notAvailable', id)} label={getUserName(id)} />
+                  <DraggablePlayer key={`notavail-${id}`} dragId={buildDragId('primary', 'notAvailable', id)} label={getUserName(id)} canDrag={canEditLineup} />
                 ))}
               </div>
             </DropSlot>

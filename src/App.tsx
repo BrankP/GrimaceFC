@@ -14,6 +14,7 @@ import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPassc
 type AppState = {
   data: DataStore | null;
   currentUser: User | null;
+  canEditLineup: boolean;
   upsertUserByName: (name: string, passcode: string) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
   addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => Promise<void>;
@@ -34,6 +35,7 @@ export const useAppState = () => {
 };
 
 export default function App() {
+  const ADMIN_PASSCODE = 'nah';
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
   const [error, setError] = useState('');
@@ -97,6 +99,7 @@ export default function App() {
 
   const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
   const hasTeamPasscode = teamPasscode.trim().length > 0;
+  const canEditLineup = teamPasscode.trim() === ADMIN_PASSCODE;
 
   const upsertUserByName = async (name: string, passcode: string) => {
     try {
@@ -182,6 +185,7 @@ export default function App() {
       value={{
         data,
         currentUser,
+        canEditLineup,
         upsertUserByName,
         addMessage,
         addFine,
@@ -201,7 +205,6 @@ export default function App() {
           </div>
           <div className="row">
             <button className="secondary header-chip" type="button" onClick={() => setShowFineModal(true)}>Fine Submission</button>
-            <button className="secondary header-chip" type="button" onClick={() => setShowPasscodeModal(true)}>Team Passcode</button>
             <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>

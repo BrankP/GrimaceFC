@@ -10,7 +10,9 @@
   },
   "compatibility_flags": ["nodejs_compat"],
   "vars": {
-    "TEAM_PASSCODE": "nah"
+    "TEAM_PASSCODE": "nah",
+    "ADMIN_PASSCODE": "nah",
+    "VIEW_PASSCODE": "yea"
   },
   "d1_databases": [
     {

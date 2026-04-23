@@ -1,6 +1,8 @@
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
+  ADMIN_PASSCODE?: string;
+  VIEW_PASSCODE?: string;
   TEAM_PASSCODE?: string;
 }
 
@@ -56,12 +58,26 @@ const rateLimit = (request: Request) => {
 
 const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
 
+const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | null => {
+  const adminPasscode = env.ADMIN_PASSCODE ?? env.TEAM_PASSCODE ?? 'nah';
+  const viewPasscode = env.VIEW_PASSCODE ?? 'yea';
+  if (provided === adminPasscode) return 'admin';
+  if (provided === viewPasscode) return 'view';
+  return null;
+};
+
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
-  const configuredPasscode = env.TEAM_PASSCODE ?? 'nah';
   const provided = request.headers.get('x-team-passcode');
   if (!provided) return errorResponse('x-team-passcode header is required', 401);
-  if (provided !== configuredPasscode) return errorResponse('Invalid team passcode', 403);
+  if (!resolvePasscodeRole(provided, env)) return errorResponse('Invalid team passcode', 403);
+  return null;
+};
+
+const requireAdminPasscode = (request: Request, env: Env) => {
+  const provided = request.headers.get('x-team-passcode');
+  if (!provided) return errorResponse('x-team-passcode header is required', 401);
+  if (resolvePasscodeRole(provided, env) !== 'admin') return errorResponse('Admin passcode required for lineup edits', 403);
   return null;
 };
 
@@ -310,6 +326,14 @@ const getTopRosterUser = (env: Env) =>
     'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
   ).first<{ user_id: string; name: string; roster_order: number }>();
 
+const getNextEligibleRosterUser = async (env: Env, eventId: string) => {
+  const eligible = await env.DB.prepare(
+    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE NOT EXISTS (SELECT 1 FROM next_ref_passes p WHERE p.event_id = ?1 AND p.user_id = ref_roster.user_id) ORDER BY ref_roster.roster_order ASC LIMIT 1',
+  ).bind(eventId).first<{ user_id: string; name: string; roster_order: number }>();
+  if (eligible) return eligible;
+  return getTopRosterUser(env);
+};
+
 const writeRosterOrder = async (env: Env, orderedUserIds: string[]) => {
   for (let index = 0; index < orderedUserIds.length; index += 1) {
     await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
@@ -411,8 +435,20 @@ const autoAdvanceCompletedNextRefCycle = async (env: Env) => {
   }
 };
 
+const alignPendingCurrentRef = async (
+  env: Env,
+  state: { event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted' },
+) => {
+  if (state.status !== 'Pending Decision') return state;
+  const eligible = await getNextEligibleRosterUser(env, state.event_id);
+  if (!eligible || eligible.user_id === state.current_user_id) return state;
+  await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+    .bind(eligible.user_id, nowIso(), state.event_id)
+    .run();
+  return { ...state, current_user_id: eligible.user_id };
+};
+
 const buildNextRefPayload = async (env: Env) => {
-  await normalizeRosterOrder(env);
   await autoAdvanceCompletedNextRefCycle(env);
   const trackedState = await getTrackedNextRefState(env);
   const nextAway = trackedState
@@ -437,6 +473,15 @@ const buildNextRefPayload = async (env: Env) => {
   }
 
   const state = trackedState ?? (await ensureNextRefStateForEvent(env, nextAway.id));
+  if (state && state.status === 'Pending Decision') {
+    const eligible = await getNextEligibleRosterUser(env, nextAway.id);
+    if (eligible && eligible.user_id !== state.current_user_id) {
+      await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+        .bind(eligible.user_id, nowIso(), nextAway.id)
+        .run();
+      state.current_user_id = eligible.user_id;
+    }
+  }
   const passRows = await env.DB.prepare(
     'SELECT next_ref_passes.user_id AS user_id, users.name AS name, next_ref_passes.passed_at AS passed_at FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC',
   ).bind(nextAway.id).all<{ user_id: string; name: string; passed_at: string }>();
@@ -575,7 +620,8 @@ async function handleApi(request: Request, env: Env) {
       const body = (await request.json()) as { userId?: string; eventId?: string };
       if (!body.userId || !body.eventId) return errorResponse('userId and eventId are required');
 
-      const state = await ensureNextRefStateForEvent(env, body.eventId);
+      const rawState = await ensureNextRefStateForEvent(env, body.eventId);
+      const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
       if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can pass', 403);
       if (state.status !== 'Pending Decision') return errorResponse('Cannot pass after duty has been accepted', 400);
@@ -591,13 +637,13 @@ async function handleApi(request: Request, env: Env) {
 
       await moveRosterUserToBottom(env, body.userId);
       await normalizeRosterOrder(env);
-      const nextTop = await getTopRosterUser(env);
-      if (!nextTop) return errorResponse('Ref roster is empty', 400);
+      const nextEligible = await getNextEligibleRosterUser(env, body.eventId);
+      if (!nextEligible) return errorResponse('Ref roster is empty', 400);
 
       await env.DB.prepare(
         'UPDATE next_ref_state SET current_user_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
       )
-        .bind(nextTop.user_id, 'Pending Decision', nowIso(), body.eventId)
+        .bind(nextEligible.user_id, 'Pending Decision', nowIso(), body.eventId)
         .run();
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
@@ -607,7 +653,8 @@ async function handleApi(request: Request, env: Env) {
       const body = (await request.json()) as { userId?: string; eventId?: string };
       if (!body.userId || !body.eventId) return errorResponse('userId and eventId are required');
 
-      const state = await ensureNextRefStateForEvent(env, body.eventId);
+      const rawState = await ensureNextRefStateForEvent(env, body.eventId);
+      const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
       if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can accept', 403);
 
@@ -728,6 +775,8 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/lineup' && method === 'POST') {
+      const adminPasscodeError = requireAdminPasscode(request, env);
+      if (adminPasscodeError) return adminPasscodeError;
       const body = (await request.json()) as {
         id?: string;
         eventId?: string;
