@@ -28,6 +28,10 @@ Tables:
 - fines
 - lineups
 - availability
+- ref_roster
+- next_ref_state
+- next_ref_passes
+- next_ref_history
 
 ## API endpoints
 
@@ -43,6 +47,11 @@ Tables:
 - `GET /api/availability`
 - `POST /api/availability`
 - `POST /api/users/upsert`
+- `GET /api/next-ref`
+- `POST /api/next-ref/pass`
+- `POST /api/next-ref/accept`
+- `POST /api/next-ref/complete`
+- `GET /api/next-ref/history`
 
 All endpoints return JSON and include permissive CORS headers.
 
@@ -64,6 +73,7 @@ await env.DB
 
 - App data is fetched from Worker API (D1 source of truth)
 - Writes (messages/fines/lineup/users/availability) are sent via POST routes
+- Next referee duty is handled via `/api/next-ref*` routes and tied to the next upcoming away game
 - localStorage is now only used for:
   - current user id
   - optional UI preferences
@@ -112,6 +122,7 @@ The Worker includes a pragmatic protection stack:
 - **Short-lived caching for read APIs**
   - `/api/events`, `/api/next-game`: 60s
   - `/api/messages`, `/api/fines`, `/api/lineup`: 20s
+  - `/api/next-ref`, `/api/next-ref/history`: no-store
 - **Query caps + ordering**
   - messages/fines/events capped to predictable limits
 - **Debounced frontend polling**
