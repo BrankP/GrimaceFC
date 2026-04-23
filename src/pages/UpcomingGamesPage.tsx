@@ -31,6 +31,8 @@ export function UpcomingGamesPage() {
   const formatEventTime = (isoDate: string, eventType: string) =>
     eventType === 'Sesh' ? 'All day' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
+  const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
+
   return (
     <section>
       <h2>Upcoming Games & Sessions</h2>
@@ -49,6 +51,10 @@ export function UpcomingGamesPage() {
                 currentUser && (beerDutyUserId === currentUser.id || refDutyUserId === currentUser.id),
               );
               const statusIcon = loggedInUserHasDuty ? '⚠️' : indicator.dot;
+              const attendees = store.users.filter((user) => getAvailability(event.id, user.id) === 'available');
+              const nonAttendees = store.users.filter((user) => getAvailability(event.id, user.id) === 'not_available');
+              const noResponse = store.users.filter((user) => getAvailability(event.id, user.id) === null);
+              const mapAddress = event.mapAddress || event.location;
 
               return (
                 <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} onClick={() => toggleExpanded(event.id)}>
@@ -92,12 +98,39 @@ export function UpcomingGamesPage() {
 
                   {isExpanded && (
                     <div className="sleek-event-expanded">
-                      <p className="sleek-event-line muted">Type: {event.eventType}</p>
-                      <p className="sleek-event-line muted">Location: {event.location}</p>
-                      <p className="sleek-event-line muted">Occasion: {event.occasion || 'N/A'}</p>
-                      <p className="sleek-event-line muted">Home/Away: {event.homeAway || 'N/A'}</p>
-                      <p className="sleek-event-line muted">Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'N/A'}</p>
-                      <p className="sleek-event-line muted">Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'N/A'}</p>
+                      <div className="sleek-attendance-groups">
+                        <div>
+                          <p className="sleek-event-line muted"><strong>Attending ({attendees.length})</strong></p>
+                          <p className="sleek-event-line muted">{attendees.length ? attendees.map((user) => getUserName(user.id)).join(', ') : 'None'}</p>
+                        </div>
+                        <div>
+                          <p className="sleek-event-line muted"><strong>Not Attending ({nonAttendees.length})</strong></p>
+                          <p className="sleek-event-line muted">{nonAttendees.length ? nonAttendees.map((user) => getUserName(user.id)).join(', ') : 'None'}</p>
+                        </div>
+                        <div>
+                          <p className="sleek-event-line muted"><strong>No Response ({noResponse.length})</strong></p>
+                          <p className="sleek-event-line muted">{noResponse.length ? noResponse.map((user) => getUserName(user.id)).join(', ') : 'None'}</p>
+                        </div>
+                      </div>
+
+                      <iframe
+                        className="sleek-event-map"
+                        width="600"
+                        height="450"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        allowFullScreen
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={getMapEmbedUrl(mapAddress)}
+                        title={`Map for ${event.location}`}
+                      />
+
+                      {event.eventType === 'Game' && (
+                        <div className="sleek-duties">
+                          <p className="sleek-event-line muted">Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'}</p>
+                          <p className="sleek-event-line muted">Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </article>

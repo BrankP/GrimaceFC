@@ -77,6 +77,15 @@ button.secondary { background: #39245f; }
 }
 .avail-pill.active-yes { background: #1e8f56; border-color: #1e8f56; }
 .avail-pill.active-no { background: #8c2040; border-color: #8c2040; }
+
+.sleek-attendance-groups { display: grid; gap: .45rem; }
+.sleek-event-map {
+  width: 100%;
+  max-width: 100%;
+  min-height: 220px;
+  border-radius: 10px;
+}
+.sleek-duties { display: grid; gap: .2rem; }
 .sleek-event-row.is-collapsed .sleek-event-main { gap: .14rem; }
 .sleek-event-row.is-collapsed .sleek-event-line { font-size: .88rem; }
 .sleek-event-row.is-collapsed .sleek-event-line strong { font-size: 1.05rem; }

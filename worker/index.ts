@@ -110,6 +110,7 @@ const schemaStatements = [
     beer_duty_user_id TEXT,
     ref_duty_user_id TEXT,
     location TEXT NOT NULL,
+    map_address TEXT,
     opponent TEXT,
     occasion TEXT,
     team_name TEXT NOT NULL,
@@ -217,6 +218,9 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
   if (!existingColumns.has('ref_duty_user_id')) {
     await env.DB.prepare('ALTER TABLE events ADD COLUMN ref_duty_user_id TEXT').run();
+  }
+  if (!existingColumns.has('map_address')) {
+    await env.DB.prepare('ALTER TABLE events ADD COLUMN map_address TEXT').run();
   }
 };
 
@@ -529,7 +533,7 @@ async function handleApi(request: Request, env: Env) {
   try {
     if (pathname === '/api/events' && method === 'GET') {
       const { results } = await env.DB.prepare(
-        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
       ).all();
 
       return jsonResponse(
@@ -542,6 +546,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -554,7 +559,7 @@ async function handleApi(request: Request, env: Env) {
 
     if (pathname === '/api/next-game' && method === 'GET') {
       const row = await env.DB.prepare(
-        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
       ).first();
       if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
       return jsonResponse(
@@ -567,6 +572,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -871,12 +877,6 @@ async function handleApi(request: Request, env: Env) {
         'INSERT INTO users (id, name, nickname, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
       )
         .bind(id, normalized, nickname, createdYear, createdAt)
-        .run();
-
-      await env.DB.prepare(
-        "INSERT INTO availability (id, event_id, user_id, status, updated_at, created_at) SELECT ?1 || '-' || events.id, events.id, ?2, 'not_available', ?3, ?4 FROM events WHERE NOT EXISTS (SELECT 1 FROM availability WHERE availability.event_id = events.id AND availability.user_id = ?2)",
-      )
-        .bind(id, id, nowIso(), createdAt)
         .run();
 
       return jsonResponse({ id, name: normalized, nickname, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
