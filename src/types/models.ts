@@ -25,15 +25,6 @@ export interface TeamEvent {
   isNextUp?: boolean;
 }
 
-export interface Fine {
-  id: string;
-  whoUserId: string;
-  amount: number;
-  reason: string;
-  submittedByUserId: string;
-  submittedAt: string;
-}
-
 export interface Message {
   id: string;
   userId: string;
@@ -64,7 +55,6 @@ export interface Availability {
 export interface DataStore {
   users: User[];
   events: TeamEvent[];
-  fines: Fine[];
   messages: Message[];
   lineups: Lineup[];
   availability: Availability[];

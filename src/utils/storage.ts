@@ -31,4 +31,4 @@ export const makeExportBundle = (payload: unknown) => JSON.stringify(payload);
 
 
 // backwards compatibility for older components still importing this symbol
-export const readLocalChanges = () => ({ users: [], fines: [], messages: [], nicknames: [], lineups: [], availability: [] });
+export const readLocalChanges = () => ({ users: [], messages: [], nicknames: [], lineups: [], availability: [] });

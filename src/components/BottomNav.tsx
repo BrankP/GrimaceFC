@@ -2,7 +2,6 @@ import { NavLink } from 'react-router-dom';
 
 const links = [
   { to: '/upcoming', label: 'Upcoming' },
-  { to: '/fines', label: 'Fines' },
   { to: '/chat', label: 'Chat' },
   { to: '/game', label: 'Next Game' },
   { to: '/next-ref', label: 'Next Ref' },
