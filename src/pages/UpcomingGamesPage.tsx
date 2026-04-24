@@ -109,7 +109,7 @@ export function UpcomingGamesPage() {
                           </div>
                           <div className="sleek-duty-card">
                             <p className="sleek-duty-label">Ref Duty</p>
-                            <p className="sleek-duty-value">{refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
+                            <p className="sleek-duty-value">{refDutyUserId ? getUserName(refDutyUserId) : event.homeAway === 'Away' ? 'Pending' : 'N/A'}</p>
                           </div>
                         </div>
                       )}
