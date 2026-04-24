@@ -11,9 +11,13 @@ export function ChatPage() {
   const { data, addMessage, getDisplayName, saveNickname, canWrite } = useAppState();
   const store = data!;
   const [text, setText] = useState('');
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const messages = store.messages;
 
   useEffect(() => {
@@ -36,11 +40,42 @@ export function ChatPage() {
     return groups;
   }, [messages]);
 
+  const mentionCandidates = useMemo(() => {
+    if (mentionStart === null) return [];
+    const query = mentionQuery.trim().toLowerCase();
+    if (!query) return [];
+
+    return store.users
+      .map((user) => ({ id: user.id, label: (user.nickname || user.name).trim() }))
+      .filter((user) => user.label.toLowerCase().startsWith(query))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [mentionQuery, mentionStart, store.users]);
+
+  const applyMention = (label: string) => {
+    if (mentionStart === null) return;
+    const input = inputRef.current;
+    const caret = input?.selectionStart ?? text.length;
+    const nextText = `${text.slice(0, mentionStart)}@${label} ${text.slice(caret)}`;
+    setText(nextText);
+    setMentionStart(null);
+    setMentionQuery('');
+    setActiveMentionIndex(0);
+
+    requestAnimationFrame(() => {
+      const cursor = mentionStart + label.length + 2;
+      input?.setSelectionRange(cursor, cursor);
+      input?.focus();
+    });
+  };
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (!text.trim()) return;
     void addMessage(text.trim());
     setText('');
+    setMentionQuery('');
+    setMentionStart(null);
+    setActiveMentionIndex(0);
   };
 
   return (
@@ -74,7 +109,71 @@ export function ChatPage() {
       </div>
       {canWrite ? (
       <form className="chat-input" onSubmit={onSubmit}>
-        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Send to team chat" />
+        <div className="chat-input-wrap">
+          <input
+            ref={inputRef}
+            value={text}
+            onChange={(e) => {
+              const nextValue = e.target.value;
+              const caret = e.target.selectionStart ?? nextValue.length;
+              const prefix = nextValue.slice(0, caret);
+              const mentionMatch = prefix.match(/(?:^|\s)@([^\s@]*)$/);
+
+              setText(nextValue);
+              if (!mentionMatch) {
+                setMentionStart(null);
+                setMentionQuery('');
+                setActiveMentionIndex(0);
+                return;
+              }
+
+              const queryStart = caret - mentionMatch[1].length;
+              setMentionStart(queryStart);
+              setMentionQuery(mentionMatch[1]);
+              setActiveMentionIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (!mentionCandidates.length) return;
+
+              if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                setActiveMentionIndex((current) => (current + 1) % mentionCandidates.length);
+                return;
+              }
+
+              if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                setActiveMentionIndex((current) => (current - 1 + mentionCandidates.length) % mentionCandidates.length);
+                return;
+              }
+
+              if (event.key === 'Tab') {
+                event.preventDefault();
+                const target = mentionCandidates[activeMentionIndex] ?? mentionCandidates[0];
+                if (target) applyMention(target.label);
+              }
+            }}
+            placeholder="Send to team chat"
+          />
+          {mentionCandidates.length > 0 && (
+            <ul className="mention-menu" role="listbox">
+              {mentionCandidates.map((candidate, index) => (
+                <li key={candidate.id}>
+                  <button
+                    type="button"
+                    className={`mention-option${index === activeMentionIndex ? ' active' : ''}`}
+                    onMouseDown={(event) => {
+                      event.preventDefault();
+                      applyMention(candidate.label);
+                    }}
+                  >
+                    {candidate.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <button type="submit">Send</button>
       </form>
       ) : (
