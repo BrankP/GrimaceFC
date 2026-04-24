@@ -7,7 +7,7 @@ import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
 import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
-import { canUsePushNotifications, syncPushSubscription } from './services/pushNotifications';
+import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
 
@@ -49,6 +49,7 @@ export default function App() {
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [pushStatus, setPushStatus] = useState<'idle' | 'prompting' | 'enabled' | 'unsupported' | 'denied' | 'error'>('idle');
+  const [pushErrorDetail, setPushErrorDetail] = useState('');
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -123,30 +124,50 @@ export default function App() {
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
   const shouldPromptPush = !isVisitor && Boolean(currentUserId) && pushStatus !== 'enabled' && pushStatus !== 'unsupported';
 
+  const setPushFailure = (reason: PushSyncFailureReason, detail?: string) => {
+    if (reason === 'unsupported') {
+      setPushStatus('unsupported');
+      setPushErrorDetail('');
+      return;
+    }
+    if (reason === 'denied') {
+      setPushStatus('denied');
+      setPushErrorDetail('');
+      return;
+    }
+    if (reason === 'default') {
+      setPushStatus('idle');
+      setPushErrorDetail('');
+      return;
+    }
+    setPushStatus('error');
+    if (reason === 'missing_vapid_key') {
+      setPushErrorDetail('Server push config is missing VAPID_PUBLIC_KEY.');
+      return;
+    }
+    if (reason === 'invalid_vapid_key') {
+      setPushErrorDetail('Server push config has an invalid VAPID public key format.');
+      return;
+    }
+    setPushErrorDetail(detail ?? reason);
+  };
+
   useEffect(() => {
     if (isVisitor || !currentUserId) return;
     if (!canUsePushNotifications()) {
       setPushStatus('unsupported');
+      setPushErrorDetail('');
       return;
     }
 
     const init = async () => {
-      try {
-        const result = await syncPushSubscription(currentUserId);
-        if (result.ok) {
-          setPushStatus('enabled');
-          return;
-        }
-        if (result.reason === 'unsupported') {
-          setPushStatus('unsupported');
-          return;
-        }
-        if (result.reason === 'denied') {
-          setPushStatus('denied');
-        }
-      } catch {
-        setPushStatus('error');
+      const result = await syncPushSubscription(currentUserId);
+      if (result.ok) {
+        setPushStatus('enabled');
+        setPushErrorDetail('');
+        return;
       }
+      setPushFailure(result.reason, result.detail);
     };
 
     void init();
@@ -156,20 +177,23 @@ export default function App() {
     if (!currentUserId) return;
     if (!canUsePushNotifications()) {
       setPushStatus('unsupported');
+      setPushErrorDetail('');
       return;
     }
-    try {
-      setPushStatus('prompting');
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        setPushStatus(permission === 'denied' ? 'denied' : 'idle');
-        return;
-      }
-      const result = await syncPushSubscription(currentUserId);
-      setPushStatus(result.ok ? 'enabled' : 'error');
-    } catch {
-      setPushStatus('error');
+    setPushStatus('prompting');
+    setPushErrorDetail('');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setPushFailure(permission);
+      return;
     }
+    const result = await syncPushSubscription(currentUserId);
+    if (result.ok) {
+      setPushStatus('enabled');
+      setPushErrorDetail('');
+      return;
+    }
+    setPushFailure(result.reason, result.detail);
   };
 
   const pushStatusLabel = (() => {
@@ -177,7 +201,7 @@ export default function App() {
     if (pushStatus === 'prompting') return 'Waiting for browser permission prompt…';
     if (pushStatus === 'denied') return 'Notifications are blocked in this browser/device.';
     if (pushStatus === 'unsupported') return 'This browser/device does not support push notifications.';
-    if (pushStatus === 'error') return 'Could not enable notifications right now.';
+    if (pushStatus === 'error') return pushErrorDetail || 'Could not enable notifications right now.';
     if (!canUsePushNotifications()) return 'This browser/device does not support push notifications.';
     return 'Enable push notifications to get alerted when someone tags you in chat.';
   })();
