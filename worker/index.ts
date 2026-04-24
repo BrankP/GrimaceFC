@@ -230,6 +230,7 @@ const schemaStatements = [
 ] as const;
 
 let schemaInitPromise: Promise<void> | null = null;
+let nextRefHasLegacyCurrentUserColumn: boolean | null = null;
 
 const ensureEventDutyColumns = async (env: Env) => {
   const columnsResult = await env.DB.prepare('PRAGMA table_info(events)').all<{ name: string }>();
@@ -265,6 +266,7 @@ const ensureRefRosterIdColumn = async (env: Env) => {
 const ensureNextRefStateSlotColumn = async (env: Env) => {
   const columnsResult = await env.DB.prepare('PRAGMA table_info(next_ref_state)').all<{ name: string }>();
   const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+  nextRefHasLegacyCurrentUserColumn = existingColumns.has('current_user_id');
 
   if (existingColumns.has('current_ref_slot_id')) return;
 
@@ -282,6 +284,13 @@ const ensureNextRefStateSlotColumn = async (env: Env) => {
         .run();
     }
   }
+};
+
+const hasLegacyNextRefCurrentUserColumn = async (env: Env) => {
+  if (nextRefHasLegacyCurrentUserColumn !== null) return nextRefHasLegacyCurrentUserColumn;
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(next_ref_state)').all<{ name: string }>();
+  nextRefHasLegacyCurrentUserColumn = columnsResult.results.some((column) => String(column.name) === 'current_user_id');
+  return nextRefHasLegacyCurrentUserColumn;
 };
 
 const ensureLineupDutyColumns = async (env: Env) => {
@@ -422,6 +431,7 @@ const getNextEligibleRosterUser = async (env: Env, eventId: string, currentRefSl
 };
 
 const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
+  const hasLegacyCurrentUser = await hasLegacyNextRefCurrentUserColumn(env);
   const existing = await env.DB.prepare(
     'SELECT event_id, current_ref_slot_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
   ).bind(eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
@@ -429,9 +439,16 @@ const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
     const normalizedSlotId = await resolveRosterSlotId(env, existing.current_ref_slot_id);
     if (!normalizedSlotId) return null;
     if (normalizedSlotId !== existing.current_ref_slot_id) {
-      await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
-        .bind(normalizedSlotId, nowIso(), existing.event_id)
-        .run();
+      const normalizedSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(normalizedSlotId).first<{ user_id: string }>();
+      if (hasLegacyCurrentUser) {
+        await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, current_user_id = ?2, updated_at = ?3 WHERE event_id = ?4')
+          .bind(normalizedSlotId, normalizedSlot?.user_id ?? null, nowIso(), existing.event_id)
+          .run();
+      } else {
+        await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+          .bind(normalizedSlotId, nowIso(), existing.event_id)
+          .run();
+      }
     }
     return { ...existing, current_ref_slot_id: normalizedSlotId };
   }
@@ -439,11 +456,19 @@ const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
   const top = await getTopRosterUser(env);
   if (!top) return null;
   const createdAt = nowIso();
-  await env.DB.prepare(
-    'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
-  )
-    .bind(eventId, top.id, 'Pending Decision', 0, null, createdAt, createdAt)
-    .run();
+  if (hasLegacyCurrentUser) {
+    await env.DB.prepare(
+      'INSERT INTO next_ref_state (event_id, current_ref_slot_id, current_user_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)',
+    )
+      .bind(eventId, top.id, top.user_id, 'Pending Decision', 0, null, createdAt, createdAt)
+      .run();
+  } else {
+    await env.DB.prepare(
+      'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+    )
+      .bind(eventId, top.id, 'Pending Decision', 0, null, createdAt, createdAt)
+      .run();
+  }
 
   return {
     event_id: eventId,
@@ -511,15 +536,22 @@ const alignPendingCurrentRef = async (
   state: { event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted' },
 ) => {
   if (state.status !== 'Pending Decision') return state;
+  const hasLegacyCurrentUser = await hasLegacyNextRefCurrentUserColumn(env);
   const hasCurrentPassed = await env.DB.prepare('SELECT id FROM next_ref_passes WHERE event_id = ?1 AND user_id = (SELECT user_id FROM ref_roster WHERE id = ?2 LIMIT 1) LIMIT 1')
     .bind(state.event_id, state.current_ref_slot_id)
     .first<{ id: string }>();
   if (!hasCurrentPassed) return state;
   const eligible = await getNextEligibleRosterUser(env, state.event_id, state.current_ref_slot_id);
   if (!eligible || eligible.id === state.current_ref_slot_id) return state;
-  await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
-    .bind(eligible.id, nowIso(), state.event_id)
-    .run();
+  if (hasLegacyCurrentUser) {
+    await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, current_user_id = ?2, updated_at = ?3 WHERE event_id = ?4')
+      .bind(eligible.id, eligible.user_id, nowIso(), state.event_id)
+      .run();
+  } else {
+    await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+      .bind(eligible.id, nowIso(), state.event_id)
+      .run();
+  }
   return { ...state, current_ref_slot_id: eligible.id };
 };
 
@@ -708,11 +740,19 @@ async function handleApi(request: Request, env: Env) {
       const nextEligible = await getNextEligibleRosterUser(env, body.eventId, state.current_ref_slot_id);
       if (!nextEligible) return errorResponse('Ref roster is empty', 400);
 
-      await env.DB.prepare(
-        'UPDATE next_ref_state SET current_ref_slot_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
-      )
-        .bind(nextEligible.id, 'Pending Decision', nowIso(), body.eventId)
-        .run();
+      if (hasLegacyCurrentUser) {
+        await env.DB.prepare(
+          'UPDATE next_ref_state SET current_ref_slot_id = ?1, current_user_id = ?2, status = ?3, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?4 WHERE event_id = ?5',
+        )
+          .bind(nextEligible.id, nextEligible.user_id, 'Pending Decision', nowIso(), body.eventId)
+          .run();
+      } else {
+        await env.DB.prepare(
+          'UPDATE next_ref_state SET current_ref_slot_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
+        )
+          .bind(nextEligible.id, 'Pending Decision', nowIso(), body.eventId)
+          .run();
+      }
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }
@@ -780,11 +820,19 @@ async function handleApi(request: Request, env: Env) {
         const nextEligible = await getNextEligibleRosterUser(env, nextAway.id, normalizedSlotId);
         if (nextEligible?.id) {
           const createdAt = nowIso();
-          await env.DB.prepare(
-            'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
-          )
-            .bind(nextAway.id, nextEligible.id, 'Pending Decision', 0, null, createdAt, createdAt)
-            .run();
+          if (hasLegacyCurrentUser) {
+            await env.DB.prepare(
+              'INSERT INTO next_ref_state (event_id, current_ref_slot_id, current_user_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)',
+            )
+              .bind(nextAway.id, nextEligible.id, nextEligible.user_id, 'Pending Decision', 0, null, createdAt, createdAt)
+              .run();
+          } else {
+            await env.DB.prepare(
+              'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+            )
+              .bind(nextAway.id, nextEligible.id, 'Pending Decision', 0, null, createdAt, createdAt)
+              .run();
+          }
         }
       }
 
