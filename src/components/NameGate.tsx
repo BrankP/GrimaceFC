@@ -56,9 +56,9 @@ export function NameGate({ onSubmit, initialFirstName = '', initialLastName = ''
           <label htmlFor="last-name">Last name</label>
           <input id="last-name" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="e.g. Smith" required />
 
-          <label className="row" htmlFor="visitor-mode">
+          <label className="visitor-toggle" htmlFor="visitor-mode">
             <input id="visitor-mode" type="checkbox" checked={isVisitor} onChange={(e) => setIsVisitor(e.target.checked)} />
-            Visitor
+            <span>Visitor</span>
           </label>
 
           {!isVisitor && (

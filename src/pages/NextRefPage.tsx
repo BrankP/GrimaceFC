@@ -13,7 +13,7 @@ export function NextRefPage() {
   const [isWorking, setWorking] = useState(false);
   const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
-  const { canWrite, isVisitor } = useAppState();
+  const { canWrite, canEditLineup, isVisitor } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
 
   const refresh = async () => {
@@ -89,6 +89,7 @@ export function NextRefPage() {
       <h2>Next Ref</h2>
       {error && <p className="error">{error}</p>}
       {isVisitor && <p className="muted">Visitor mode: Next Ref actions are disabled.</p>}
+      {!isVisitor && !canEditLineup && <p className="muted">Only admins can complete duty or run override actions.</p>}
 
       {state?.event ? (
         <article className="card next-ref-summary">
@@ -119,7 +120,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`next-ref-action-btn ${pendingAction === 'pass' ? 'is-pending' : ''}`}
-            disabled={!canWrite || isWorking || !state?.event || !state?.currentRefUserId}
+            disabled={!canWrite || isWorking || isAccepted || !state?.event || !state?.currentRefUserId}
             onClick={() => {
               if (!state?.event || !state.currentRefUserId) return;
               void runAction('pass', () => passNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
@@ -130,7 +131,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`next-ref-action-btn ${pendingAction === 'accept' ? 'is-pending' : ''}`}
-            disabled={!canWrite || isWorking || !state?.event || !state?.currentRefUserId}
+            disabled={!canWrite || isWorking || isAccepted || !state?.event || !state?.currentRefUserId}
             onClick={() => {
               if (!state?.event || !state.currentRefUserId) return;
               void runAction('accept', () => acceptNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
@@ -144,7 +145,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''}`}
-            disabled={!canWrite || !state?.event || isWorking}
+            disabled={!canEditLineup || !state?.event || isWorking}
             onClick={() => {
               if (!state?.event) return;
               void runAction('complete', () => completeNextRef({ eventId: state.event!.id }));
