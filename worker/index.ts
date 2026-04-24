@@ -4,9 +4,22 @@ export interface Env {
   ADMIN_PASSCODE?: string;
   VIEW_PASSCODE?: string;
   TEAM_PASSCODE?: string;
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_KEY?: string;
+  VAPID_SUBJECT?: string;
 }
 
 type RateEntry = { count: number; resetAt: number };
+type WebPushSubscription = {
+  endpoint: string;
+  expirationTime?: number | null;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+};
+type PendingPushNotification = { title: string; body: string; url: string };
+
 const rateStore = new Map<string, RateEntry>();
 
 const RATE_WINDOW_MS = 60_000;
@@ -138,6 +151,230 @@ const cacheHeadersFor = (pathname: string) => {
 
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)+)/g;
+
+const parseTaggedFullNames = (text: string) => {
+  const matches = text.matchAll(TAG_PATTERN);
+  const unique = new Set<string>();
+  for (const match of matches) {
+    const tagged = (match[1] ?? '').trim();
+    if (!tagged) continue;
+    unique.add(normalizeMentionName(tagged));
+  }
+  return Array.from(unique);
+};
+
+const getVapidConfig = (env: Env) => {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY) return null;
+  return {
+    publicKey: env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+    subject: env.VAPID_SUBJECT ?? 'mailto:admin@grimacefc.local',
+  };
+};
+
+const toBase64Url = (input: ArrayBuffer | Uint8Array | string) => {
+  const bytes = typeof input === 'string' ? Uint8Array.from(input, (ch) => ch.charCodeAt(0)) : input instanceof Uint8Array ? input : new Uint8Array(input);
+  const binary = String.fromCharCode(...bytes);
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+};
+
+const base64UrlToUint8Array = (base64Url: string): Uint8Array => {
+  const padded = `${base64Url}${'='.repeat((4 - (base64Url.length % 4)) % 4)}`;
+  const base64 = padded.replace(/-/g, '+').replace(/_/g, '/');
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  return bytes;
+};
+
+const sanitizePushSubscription = (raw: unknown): WebPushSubscription | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  const maybe = raw as Partial<WebPushSubscription>;
+  if (!maybe.endpoint || typeof maybe.endpoint !== 'string') return null;
+  if (!maybe.keys?.p256dh || !maybe.keys?.auth) return null;
+  try {
+    base64UrlToUint8Array(maybe.keys.p256dh);
+    base64UrlToUint8Array(maybe.keys.auth);
+  } catch {
+    return null;
+  }
+
+  return {
+    endpoint: maybe.endpoint,
+    expirationTime: typeof maybe.expirationTime === 'number' ? maybe.expirationTime : null,
+    keys: {
+      p256dh: maybe.keys.p256dh,
+      auth: maybe.keys.auth,
+    },
+  };
+};
+
+const derToJose = (der: Uint8Array, outputLength: number) => {
+  if (der[0] !== 0x30) throw new Error('Invalid DER signature');
+
+  let offset = 1;
+  let seqLen = der[offset];
+  offset += 1;
+  if (seqLen & 0x80) {
+    const lenBytes = seqLen & 0x7f;
+    seqLen = 0;
+    for (let idx = 0; idx < lenBytes; idx += 1) {
+      seqLen = (seqLen << 8) | der[offset];
+      offset += 1;
+    }
+  }
+
+  if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
+  offset += 1;
+  const rLength = der[offset];
+  offset += 1;
+  let r = der.slice(offset, offset + rLength);
+  offset += rLength;
+
+  if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
+  offset += 1;
+  const sLength = der[offset];
+  offset += 1;
+  let s = der.slice(offset, offset + sLength);
+  while (r.length > outputLength / 2 && r[0] === 0) r = r.slice(1);
+  while (s.length > outputLength / 2 && s[0] === 0) s = s.slice(1);
+  const rPadded = new Uint8Array(outputLength / 2);
+  const sPadded = new Uint8Array(outputLength / 2);
+  rPadded.set(r, outputLength / 2 - r.length);
+  sPadded.set(s, outputLength / 2 - s.length);
+  const combined = new Uint8Array(outputLength);
+  combined.set(rPadded, 0);
+  combined.set(sPadded, outputLength / 2);
+  return toBase64Url(combined);
+};
+
+const createVapidJwt = async (env: Env, endpoint: string) => {
+  const vapid = getVapidConfig(env);
+  if (!vapid) return null;
+  const audience = new URL(endpoint).origin;
+  const header = { typ: 'JWT', alg: 'ES256' };
+  const claims = {
+    aud: audience,
+    exp: Math.floor(Date.now() / 1000) + 12 * 60 * 60,
+    sub: vapid.subject,
+  };
+  const encodedHeader = toBase64Url(JSON.stringify(header));
+  const encodedClaims = toBase64Url(JSON.stringify(claims));
+  const data = `${encodedHeader}.${encodedClaims}`;
+
+  const publicBytes = base64UrlToUint8Array(vapid.publicKey);
+  const privateBytes = base64UrlToUint8Array(vapid.privateKey);
+  const x = toBase64Url(publicBytes.slice(1, 33));
+  const y = toBase64Url(publicBytes.slice(33, 65));
+  const d = toBase64Url(privateBytes);
+  const signingKey = await crypto.subtle.importKey(
+    'jwk',
+    { kty: 'EC', crv: 'P-256', x, y, d, key_ops: ['sign'], ext: false },
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['sign'],
+  );
+  const signatureDer = new Uint8Array(
+    await crypto.subtle.sign(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      signingKey,
+      new TextEncoder().encode(data),
+    ),
+  );
+  const signatureJose = derToJose(signatureDer, 64);
+  return `${data}.${signatureJose}`;
+};
+
+const storePendingNotification = async (env: Env, endpoint: string, notification: PendingPushNotification) => {
+  const now = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO push_notification_queue (id, endpoint, payload_json, created_at)
+     VALUES (?1, ?2, ?3, ?4)
+     ON CONFLICT(endpoint) DO UPDATE SET payload_json=excluded.payload_json, created_at=excluded.created_at`,
+  )
+    .bind(createId('pushmsg'), endpoint, JSON.stringify(notification), now)
+    .run();
+};
+
+const sendPushPing = async (env: Env, endpoint: string) => {
+  const vapid = getVapidConfig(env);
+  if (!vapid) return { ok: false, status: 0 };
+  const jwt = await createVapidJwt(env, endpoint);
+  if (!jwt) return { ok: false, status: 0 };
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    body: null,
+    headers: {
+      TTL: '60',
+      Urgency: 'high',
+      Authorization: `vapid t=${jwt}, k=${vapid.publicKey}`,
+      'Crypto-Key': `p256ecdsa=${vapid.publicKey}`,
+    },
+  });
+  const responseText = response.ok ? '' : await response.text();
+  return { ok: response.ok, status: response.status, responseText };
+};
+
+const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
+  const vapid = getVapidConfig(env);
+  if (!vapid) return;
+
+  const taggedNames = parseTaggedFullNames(payload.messageText);
+  if (!taggedNames.length) return;
+
+  const placeholders = taggedNames.map((_, idx) => `?${idx + 1}`).join(', ');
+  const taggedUsers = await env.DB.prepare(
+    `SELECT id, name FROM users WHERE lower(trim(name)) IN (${placeholders})`,
+  )
+    .bind(...taggedNames)
+    .all<{ id: string; name: string }>();
+
+  const recipientIds = Array.from(
+    new Set(
+      taggedUsers.results
+        .map((user) => user.id)
+        .filter((userId) => userId !== payload.senderUserId),
+    ),
+  );
+  if (!recipientIds.length) return;
+
+  const subPlaceholders = recipientIds.map((_, idx) => `?${idx + 1}`).join(', ');
+  const subscriptions = await env.DB.prepare(
+    `SELECT id, user_id, endpoint, p256dh_key, auth_key FROM push_subscriptions WHERE user_id IN (${subPlaceholders})`,
+  )
+    .bind(...recipientIds)
+    .all<{ id: string; user_id: string; endpoint: string; p256dh_key: string; auth_key: string }>();
+
+  if (!subscriptions.results.length) return;
+
+  const notificationPayload: PendingPushNotification = {
+    title: 'Grimace FC: You were tagged in chat',
+    body: payload.messageText,
+    url: '/chat',
+  };
+
+  for (const subscription of subscriptions.results) {
+    try {
+      await storePendingNotification(env, subscription.endpoint, notificationPayload);
+      const pushResult = await sendPushPing(env, subscription.endpoint);
+      if (pushResult.ok) continue;
+      if (pushResult.status === 404 || pushResult.status === 410) {
+        await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
+      }
+      console.error('push_send_failed', {
+        endpoint: subscription.endpoint.slice(0, 80),
+        statusCode: pushResult.status,
+        responseText: (pushResult.responseText ?? '').slice(0, 200),
+      });
+    } catch (err) {
+      console.error('push_send_failed', {
+        endpoint: subscription.endpoint.slice(0, 80),
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+};
+
 const schemaStatements = [
   `CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -170,6 +407,24 @@ const schemaStatements = [
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    p256dh_key TEXT NOT NULL,
+    auth_key TEXT NOT NULL,
+    expiration_time INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(user_id, endpoint),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS push_notification_queue (
+    id TEXT PRIMARY KEY,
+    endpoint TEXT NOT NULL UNIQUE,
+    payload_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
   `CREATE TABLE IF NOT EXISTS lineups (
     id TEXT PRIMARY KEY,
@@ -236,6 +491,8 @@ const schemaStatements = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)',
   'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_push_queue_created_at ON push_notification_queue(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id)',
   'CREATE INDEX IF NOT EXISTS idx_ref_roster_order ON ref_roster(roster_order)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_passes_event ON next_ref_passes(event_id, passed_at)',
@@ -900,6 +1157,67 @@ async function handleApi(request: Request, env: Env) {
       );
     }
 
+    if (pathname === '/api/push/vapid-public-key' && method === 'GET') {
+      return jsonResponse({ publicKey: env.VAPID_PUBLIC_KEY ?? null }, 200, { 'Cache-Control': 'no-store' });
+    }
+
+    if (pathname === '/api/push/pending' && method === 'GET') {
+      const endpoint = searchParams.get('endpoint');
+      if (!endpoint) return errorResponse('endpoint is required');
+      const pending = await env.DB.prepare('SELECT id, payload_json FROM push_notification_queue WHERE endpoint = ?1 LIMIT 1')
+        .bind(endpoint)
+        .first<{ id: string; payload_json: string }>();
+      if (!pending) return jsonResponse({ notification: null }, 200, { 'Cache-Control': 'no-store' });
+
+      await env.DB.prepare('DELETE FROM push_notification_queue WHERE id = ?1').bind(pending.id).run();
+      return jsonResponse({ notification: JSON.parse(pending.payload_json) }, 200, { 'Cache-Control': 'no-store' });
+    }
+
+    if (pathname === '/api/push/subscription' && method === 'POST') {
+      const body = (await request.json()) as { userId?: string; subscription?: WebPushSubscription };
+      if (!body.userId) return errorResponse('userId is required');
+      const existingUser = await env.DB.prepare('SELECT id FROM users WHERE id = ?1 LIMIT 1').bind(body.userId).first<{ id: string }>();
+      if (!existingUser?.id) return errorResponse('Unknown userId', 404);
+      const subscription = sanitizePushSubscription(body.subscription);
+      if (!subscription) return errorResponse('A valid push subscription is required');
+
+      const id = createId('push');
+      const timestamp = nowIso();
+      await env.DB.prepare(
+        `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh_key, auth_key, expiration_time, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+         ON CONFLICT(user_id, endpoint) DO UPDATE SET
+           p256dh_key=excluded.p256dh_key,
+           auth_key=excluded.auth_key,
+           expiration_time=excluded.expiration_time,
+           updated_at=excluded.updated_at`,
+      )
+        .bind(
+          id,
+          body.userId,
+          subscription.endpoint,
+          subscription.keys.p256dh,
+          subscription.keys.auth,
+          subscription.expirationTime ?? null,
+          timestamp,
+          timestamp,
+        )
+        .run();
+
+      return jsonResponse({ ok: true }, 201, { 'Cache-Control': 'no-store' });
+    }
+
+    if (pathname === '/api/push/subscription' && method === 'DELETE') {
+      const body = (await request.json()) as { userId?: string; endpoint?: string };
+      if (!body.userId || !body.endpoint) return errorResponse('userId and endpoint are required');
+
+      await env.DB.prepare('DELETE FROM push_subscriptions WHERE user_id = ?1 AND endpoint = ?2')
+        .bind(body.userId, body.endpoint)
+        .run();
+
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/messages' && method === 'GET') {
       const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at FROM messages ORDER BY created_at DESC LIMIT 50').all();
       return jsonResponse(
@@ -916,12 +1234,19 @@ async function handleApi(request: Request, env: Env) {
       if (!body.userId || !body.text?.trim()) return errorResponse('userId and text are required');
       const id = createId('msg');
       const createdAt = nowIso();
+      const trimmedText = body.text.trim();
 
       await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-        .bind(id, body.userId, body.text.trim(), createdAt)
+        .bind(id, body.userId, trimmedText, createdAt)
         .run();
 
-      return jsonResponse({ id, userId: body.userId, text: body.text.trim(), createdAt }, 201, { 'Cache-Control': 'no-store' });
+      try {
+        await sendTagNotifications(env, { senderUserId: body.userId, messageText: trimmedText });
+      } catch (err) {
+        console.error('push_notification_flow_failed', err instanceof Error ? err.message : String(err));
+      }
+
+      return jsonResponse({ id, userId: body.userId, text: trimmedText, createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
 
