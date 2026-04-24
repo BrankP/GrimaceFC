@@ -25,6 +25,7 @@ type AppState = {
   getAvailability: (eventId: string, userId: string) => AvailabilityStatus | null;
   getDisplayName: (userId: string) => string;
   getUserName: (userId: string) => string;
+  refreshAppData: () => Promise<void>;
 };
 
 const AppContext = createContext<AppState | null>(null);
@@ -215,6 +216,10 @@ export default function App() {
     return user?.name || 'Unknown';
   };
 
+  const refreshAppData = async () => {
+    await refreshData(0, true);
+  };
+
   if (!data && !error) return <main className="loading">Loading team data…</main>;
   if (data && !currentUser) {
     return <NameGate onSubmit={(payload) => void upsertUserByName(payload)} serverError={error} />;
@@ -237,6 +242,7 @@ export default function App() {
         getAvailability,
         getDisplayName,
         getUserName,
+        refreshAppData,
       }}
     >
       <div className="app-shell">

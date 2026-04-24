@@ -33,8 +33,6 @@ export function UpcomingGamesPage() {
 
   const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
 
-  const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
-
   return (
     <section>
       <h2>Upcoming Games & Sessions</h2>

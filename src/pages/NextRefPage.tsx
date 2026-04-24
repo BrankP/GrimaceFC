@@ -13,7 +13,7 @@ export function NextRefPage() {
   const [isWorking, setWorking] = useState(false);
   const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
-  const { canWrite, canEditLineup, isVisitor } = useAppState();
+  const { canWrite, canEditLineup, isVisitor, refreshAppData } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
   const userTimeZone = getBrowserTimeZone();
 
@@ -67,7 +67,7 @@ export function NextRefPage() {
     try {
       const nextState = await action();
       setState(nextState);
-      await refresh();
+      await Promise.all([refresh(), refreshAppData()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Action failed');
     } finally {
