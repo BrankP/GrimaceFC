@@ -86,6 +86,8 @@ INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
 DELETE FROM next_ref_passes;
 DELETE FROM next_ref_history;
 DELETE FROM next_ref_state;
-
-INSERT OR REPLACE INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES
-('evt-001', 'refslot-001', 'Pending Decision', 0, NULL, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+-- NOTE:
+-- Do not seed a fixed next_ref_state row here.
+-- Some long-lived databases still retain a legacy NOT NULL current_user_id column
+-- alongside current_ref_slot_id, and writing only the newer shape can fail.
+-- The worker initializes next_ref_state lazily from roster + events when needed.
