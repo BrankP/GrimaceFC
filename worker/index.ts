@@ -720,6 +720,7 @@ async function handleApi(request: Request, env: Env) {
     if (pathname === '/api/next-ref/pass' && method === 'POST') {
       const body = (await request.json()) as { userId?: string; eventId?: string };
       if (!body.userId || !body.eventId) return errorResponse('userId and eventId are required');
+      const hasLegacyCurrentUser = await hasLegacyNextRefCurrentUserColumn(env);
 
       const rawState = await ensureNextRefStateForEvent(env, body.eventId);
       const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
@@ -796,6 +797,7 @@ async function handleApi(request: Request, env: Env) {
       if (adminError) return adminError;
       const body = (await request.json()) as { eventId?: string };
       if (!body.eventId) return errorResponse('eventId is required');
+      const hasLegacyCurrentUser = await hasLegacyNextRefCurrentUserColumn(env);
       const state = await env.DB.prepare(
         'SELECT event_id, current_ref_slot_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
       ).bind(body.eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
