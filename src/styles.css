@@ -161,6 +161,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .next-ref-pass-item { margin: 0; padding: .45rem .6rem; background: #2a1b47; border-radius: 10px; }
 .next-ref-roster-item { margin: 0; padding: .45rem .6rem; border-radius: 10px; background: #2a1b47; }
 .next-ref-roster-item.is-current { background: #4c2ea0; border: 1px solid #9b80f8; font-weight: 700; }
+.next-ref-roster-scroll { max-height: 55vh; overflow: auto; }
 .next-ref-history-item { padding: .55rem .65rem; border-radius: 10px; background: #2a1b47; }
 .lineup-layout { display: grid; gap: .7rem; }
 .field { min-height: 560px; position: relative; background: linear-gradient(180deg, #2f7c39, #21692f); border: 3px solid #d9f0dd; overflow: hidden; }

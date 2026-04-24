@@ -14,7 +14,7 @@ export function UpcomingGamesPage() {
 
   const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
 
-  const [expandedId, setExpandedId] = useState<string | null>(() => (sortedEvents[0] ? sortedEvents[0].id : null));
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const grouped = useMemo(
     () =>
