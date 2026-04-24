@@ -16,16 +16,16 @@ import { FORMATION_433, POSITION_LAYOUT } from '../constants/formation';
 import type { Lineup } from '../types/models';
 
 type PrimaryTarget = `position:${string}` | 'subs' | 'notAvailable';
-type DutyTarget = 'beerDuty' | 'refDuty';
+type DutyTarget = 'refDuty';
 type DropTarget = PrimaryTarget | DutyTarget;
-type DragDimension = 'primary' | 'beerDuty' | 'refDuty';
+type DragDimension = 'primary' | 'refDuty';
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
 const parseDragId = (dragId: string): { dimension: DragDimension; source: string; playerId: string } | null => {
   const [dimension, source, playerId] = dragId.split('|');
   if (!dimension || !source || !playerId) return null;
-  if (dimension !== 'primary' && dimension !== 'beerDuty' && dimension !== 'refDuty') return null;
+  if (dimension !== 'primary' && dimension !== 'refDuty') return null;
   return { dimension, source, playerId };
 };
 
@@ -219,12 +219,8 @@ export function NextGamePage() {
       draggedPrimaryStatus = target === 'notAvailable' ? 'not_available' : 'available';
     }
 
-    if (target === 'beerDuty') next.beerDutyUserId = parsed.playerId;
     if (target === 'refDuty' && showRefDuty) next.refDutyUserId = parsed.playerId;
 
-    if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty' && next.beerDutyUserId === parsed.playerId) {
-      next.beerDutyUserId = null;
-    }
     if (isPrimaryTarget(target) && parsed.dimension === 'refDuty' && next.refDutyUserId === parsed.playerId) {
       next.refDutyUserId = null;
     }
@@ -263,16 +259,6 @@ export function NextGamePage() {
             ))}
           </div>
           <aside className="stack">
-            <DropSlot id="beerDuty" className="card" canDrop={canEditLineup}>
-              <h3>Beer Duty</h3>
-              <div className="chip-wrap">
-                {lineup.beerDutyUserId ? (
-                  <DraggablePlayer dragId={buildDragId('beerDuty', 'beerDuty', lineup.beerDutyUserId)} label={getUserName(lineup.beerDutyUserId)} canDrag={canEditLineup} />
-                ) : (
-                  <small>Unassigned</small>
-                )}
-              </div>
-            </DropSlot>
             {showRefDuty && (
               <DropSlot id="refDuty" className="card" canDrop={canEditLineup}>
                 <h3>Ref Duty</h3>

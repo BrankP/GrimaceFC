@@ -21,7 +21,7 @@ type AppState = {
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
-  getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
+  getAvailability: (eventId: string, userId: string) => AvailabilityStatus | null;
   getDisplayName: (userId: string) => string;
   getUserName: (userId: string) => string;
 };
@@ -147,8 +147,8 @@ export default function App() {
     });
   };
 
-  const getAvailability = (eventId: string, userId: string): AvailabilityStatus =>
-    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? 'not_available';
+  const getAvailability = (eventId: string, userId: string): AvailabilityStatus | null =>
+    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? null;
 
   const saveLineup = async (lineup: Lineup) => {
     await withWriteGuard(async () => {
