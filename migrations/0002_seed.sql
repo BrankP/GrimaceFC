@@ -15,12 +15,12 @@ INSERT OR REPLACE INTO users (id, name, nickname, created_year, created_at) VALU
 
 INSERT OR REPLACE INTO events (id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up) VALUES
 ('evt-001', 'Game', '2026-04-18T15:00:00Z', 'Saturday', 'Home', 'usr-001', NULL, 'Riverside Turf', '34B Abbott Rd, North Curl Curl NSW 2096', 'Curl Curl A', NULL, 'Grimace FC', 1),
-('evt-002', 'Game', '2026-04-22T19:00:00Z', 'Wednesday', 'Home', 'usr-002', NULL, 'Riverside Turf', '34B Abbott Rd, North Curl Curl NSW 2096', 'ABH United A', NULL, 'Grimace FC', 0),
-('evt-003', 'Sesh', '2026-04-25T10:00:00Z', 'Saturday', NULL, NULL, NULL, 'Clubhouse', '34B Abbott Rd, North Curl Curl NSW 2096', NULL, 'Anzac Day Pissup', 'Grimace FC', 0),
-('evt-004', 'Game', '2026-05-02T13:00:00Z', 'Saturday', 'Away', 'usr-005', NULL, 'Brookvale Oval', '34B Abbott Rd, North Curl Curl NSW 2096', 'Brookvale', NULL, 'Grimace FC', 0),
-('evt-005', 'Game', '2026-05-09T15:00:00Z', 'Saturday', 'Home', 'usr-003', NULL, 'Riverside Turf', '34B Abbott Rd, North Curl Curl NSW 2096', 'St Augustines', NULL, 'Grimace FC', 0),
-('evt-006', 'Game', '2026-05-16T13:00:00Z', 'Saturday', 'Away', 'usr-004', NULL, 'Manly Vale Park', '34B Abbott Rd, North Curl Curl NSW 2096', 'Manly Vale', NULL, 'Grimace FC', 0),
-('evt-007', 'Game', '2026-05-22T19:00:00Z', 'Friday', 'Home', 'usr-001', NULL, 'Riverside Turf', '34B Abbott Rd, North Curl Curl NSW 2096', 'Harbord FC', NULL, 'Grimace FC', 0);
+('evt-002', 'Game', '2026-04-22T19:00:00Z', 'Wednesday', 'Home', 'usr-002', NULL, 'Riverside Turf', NULL, 'ABH United A', NULL, 'Grimace FC', 0),
+('evt-003', 'Sesh', '2026-04-25T10:00:00Z', 'Saturday', NULL, NULL, NULL, 'Clubhouse', NULL, NULL, 'Anzac Day Pissup', 'Grimace FC', 0),
+('evt-004', 'Game', '2026-05-02T13:00:00Z', 'Saturday', 'Away', 'usr-005', NULL, 'Brookvale Oval', NULL, 'Brookvale', NULL, 'Grimace FC', 0),
+('evt-005', 'Game', '2026-05-09T15:00:00Z', 'Saturday', 'Home', 'usr-003', NULL, 'Riverside Turf', NULL, 'St Augustines', NULL, 'Grimace FC', 0),
+('evt-006', 'Game', '2026-05-16T13:00:00Z', 'Saturday', 'Away', 'usr-004', NULL, 'Manly Vale Park', NULL, 'Manly Vale', NULL, 'Grimace FC', 0),
+('evt-007', 'Game', '2026-05-22T19:00:00Z', 'Friday', 'Home', 'usr-001', NULL, 'Riverside Turf', NULL, 'Harbord FC', NULL, 'Grimace FC', 0);
 
 INSERT OR REPLACE INTO messages (id, user_id, text, created_at) VALUES
 ('msg-001', 'usr-001', 'Who can bring the cones for Curl Curl this Saturday?', '2026-04-14T16:00:00Z'),

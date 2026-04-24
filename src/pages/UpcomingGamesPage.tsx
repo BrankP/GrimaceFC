@@ -27,7 +27,7 @@ export function UpcomingGamesPage() {
     [sortedEvents],
   );
 
-  const toggleExpanded = (eventId: string) => setExpandedId(eventId);
+  const toggleExpanded = (eventId: string) => setExpandedId((current) => (current === eventId ? null : eventId));
   const formatEventTime = (isoDate: string, eventType: string) =>
     eventType === 'Sesh' ? 'All day' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
@@ -57,7 +57,8 @@ export function UpcomingGamesPage() {
               const mapAddress = event.mapAddress || event.location;
 
               return (
-                <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`} onClick={() => toggleExpanded(event.id)}>
+                <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+                  <div className="sleek-event-header" onClick={() => toggleExpanded(event.id)} role="button" tabIndex={0} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggleExpanded(event.id) : null)}>
                   <div className="sleek-event-date">
                     <strong>{new Date(event.date).getDate()}</strong>
                     <small>{new Intl.DateTimeFormat('en-US', { month: 'short', weekday: 'short' }).format(new Date(event.date))}</small>
@@ -96,8 +97,23 @@ export function UpcomingGamesPage() {
                     </div>
                   </div>
 
+                  </div>
+
                   {isExpanded && (
                     <div className="sleek-event-expanded">
+                      {event.eventType === 'Game' && (
+                        <div className="sleek-duty-grid">
+                          <div className="sleek-duty-card">
+                            <p className="sleek-duty-label">Beer Duty</p>
+                            <p className="sleek-duty-value">{beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'}</p>
+                          </div>
+                          <div className="sleek-duty-card">
+                            <p className="sleek-duty-label">Ref Duty</p>
+                            <p className="sleek-duty-value">{refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="sleek-attendance-groups">
                         <div>
                           <p className="sleek-event-line muted"><strong>Attending ({attendees.length})</strong></p>
@@ -124,13 +140,6 @@ export function UpcomingGamesPage() {
                         src={getMapEmbedUrl(mapAddress)}
                         title={`Map for ${event.location}`}
                       />
-
-                      {event.eventType === 'Game' && (
-                        <div className="sleek-duties">
-                          <p className="sleek-event-line muted">Beer Duty: {beerDutyUserId ? getUserName(beerDutyUserId) : 'Unassigned'}</p>
-                          <p className="sleek-event-line muted">Ref Duty: {refDutyUserId ? getUserName(refDutyUserId) : 'Unassigned'}</p>
-                        </div>
-                      )}
                     </div>
                   )}
                 </article>
