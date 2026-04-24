@@ -123,8 +123,40 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .modern-bubble { background: rgba(27, 33, 49, 0.45); border: 1px solid #293147; }
 .chat-meta-row { display: flex; align-items: baseline; gap: .5rem; margin-bottom: .2rem; }
 .chat-meta-row small { color: #a8b0c7; }
+.chat-tagged-user {
+  color: #c7b5ff;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
+}
 .chat-input { position: fixed; left: 0; right: 0; bottom: 3.8rem; background: #130925; padding: .5rem; display: flex; gap: .45rem; }
 .chat-input input { flex: 1; }
+.chat-input-wrap { position: relative; flex: 1; }
+.mention-menu {
+  position: absolute;
+  bottom: calc(100% + .35rem);
+  left: 0;
+  right: 0;
+  list-style: none;
+  margin: 0;
+  padding: .25rem;
+  border-radius: 10px;
+  border: 1px solid #4d3a80;
+  background: #1c1134;
+  max-height: 170px;
+  overflow-y: auto;
+  z-index: 5;
+}
+.mention-option {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-radius: 8px;
+  padding: .45rem .55rem;
+  min-height: 0;
+}
+.mention-option.active,
+.mention-option:hover { background: #3a2063; }
 .next-ref-page { display: grid; gap: .65rem; }
 .next-ref-summary { border: 1px solid #7f66d9; background: linear-gradient(180deg, #2a1751, #24103f); }
 .next-ref-summary-grid { display: grid; gap: .8rem; }

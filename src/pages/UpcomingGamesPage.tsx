@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useAppState } from '../App';
 import { formatDayAndMonth, formatDayOfMonth, formatLocalTime, getBrowserTimeZone, getMonthLabel } from '../utils/date';
 
+const SYSTEM_USER_ID = 'grimace-bot';
+
 const getEventIndicator = (eventType: string, homeAway: string | null | undefined) => {
   if (eventType === 'Sesh') return { dot: '🟣', label: 'Sesh' };
   if (homeAway === 'Away') return { dot: '🟠', label: 'Away' };
@@ -13,6 +15,7 @@ export function UpcomingGamesPage() {
   const store = data!;
 
   const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
+  const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -54,9 +57,9 @@ export function UpcomingGamesPage() {
                 currentUser && (beerDutyUserId === currentUser.id || currentlyResponsibleRefUserId === currentUser.id),
               );
               const statusIcon = loggedInUserHasDuty ? '⚠️' : indicator.dot;
-              const attendees = store.users.filter((user) => getAvailability(event.id, user.id) === 'available');
-              const nonAttendees = store.users.filter((user) => getAvailability(event.id, user.id) === 'not_available');
-              const noResponse = store.users.filter((user) => getAvailability(event.id, user.id) === null);
+              const attendees = playerUsers.filter((user) => getAvailability(event.id, user.id) === 'available');
+              const nonAttendees = playerUsers.filter((user) => getAvailability(event.id, user.id) === 'not_available');
+              const noResponse = playerUsers.filter((user) => getAvailability(event.id, user.id) === null);
               const mapAddress = event.mapAddress || event.location;
 
               return (

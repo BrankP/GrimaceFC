@@ -18,6 +18,7 @@ import { formatLocalDate, getBrowserTimeZone } from '../utils/date';
 
 type DropTarget = `position:${string}` | 'subs' | 'notAvailable' | 'unknowns';
 type DragDimension = 'primary';
+const SYSTEM_USER_ID = 'grimace-bot';
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
@@ -123,6 +124,7 @@ export function NextGamePage() {
     () => [...store.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
     [store.events],
   );
+  const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const computedLineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
@@ -140,8 +142,8 @@ export function NextGamePage() {
         updatedAt: new Date().toISOString(),
       };
 
-    const availableUsers = store.users.filter((u) => getAvailability(nextGame.id, u.id) === 'available').map((u) => u.id);
-    const notAvailable = store.users.filter((u) => getAvailability(nextGame.id, u.id) === 'not_available').map((u) => u.id);
+    const availableUsers = playerUsers.filter((u) => getAvailability(nextGame.id, u.id) === 'available').map((u) => u.id);
+    const notAvailable = playerUsers.filter((u) => getAvailability(nextGame.id, u.id) === 'not_available').map((u) => u.id);
 
     const positions = { ...base.positions };
     Object.keys(positions).forEach((pos) => {
@@ -152,7 +154,7 @@ export function NextGamePage() {
     const subs = availableUsers.filter((id) => !assigned.has(id));
 
     return { ...base, positions, subs, notAvailable };
-  }, [store.lineups, store.users, nextGame, getAvailability]);
+  }, [store.lineups, playerUsers, nextGame, getAvailability]);
 
   const [draftLineup, setDraftLineup] = useState<Lineup | null>(null);
   const [hasPendingSave, setHasPendingSave] = useState(false);
@@ -171,7 +173,7 @@ export function NextGamePage() {
   const lineup = draftLineup ?? computedLineup;
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 
-  const unknowns = store.users.filter((u) => getAvailability(nextGame.id, u.id) === null).map((u) => u.id);
+  const unknowns = playerUsers.filter((u) => getAvailability(nextGame.id, u.id) === null).map((u) => u.id);
 
   const handleDrop = ({ active, over }: DragEndEvent) => {
     if (!canEditLineup) return;

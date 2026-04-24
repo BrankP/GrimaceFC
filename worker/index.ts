@@ -12,6 +12,7 @@ const rateStore = new Map<string, RateEntry>();
 const RATE_WINDOW_MS = 60_000;
 const READ_LIMIT = 60;
 const WRITE_LIMIT = 20;
+const SYSTEM_USER_ID = 'grimace-bot';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -70,7 +71,7 @@ const insertSystemMessage = async (env: Env, text: string, fallbackUserId?: stri
   await ensureGrimaceUser(env);
   try {
     await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(createId('msg'), 'grimace-bot', text, nowIso())
+      .bind(createId('msg'), SYSTEM_USER_ID, text, nowIso())
       .run();
   } catch (err) {
     if (!fallbackUserId) throw err;
@@ -89,9 +90,9 @@ const maybePostAttendanceReminders = async (env: Env) => {
 
   for (const event of events.results) {
     const missing = await env.DB.prepare(
-      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL ORDER BY users.name ASC',
+      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL AND users.id != ?2 ORDER BY users.name ASC',
     )
-      .bind(event.id)
+      .bind(event.id, SYSTEM_USER_ID)
       .all<{ name: string }>();
 
     if (!missing.results.length) continue;
@@ -318,7 +319,7 @@ const ensureLineupDutyColumns = async (env: Env) => {
 };
 
 const ensureDefaultDutyAssignments = async (env: Env) => {
-  const users = await env.DB.prepare('SELECT id FROM users ORDER BY created_at ASC LIMIT 50').all<{ id: string }>();
+  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC LIMIT 50').bind(SYSTEM_USER_ID).all<{ id: string }>();
   const userIds = users.results.map((user) => String(user.id));
   if (userIds.length === 0) return;
 
@@ -342,7 +343,7 @@ const ensureRefRosterSeed = async (env: Env) => {
   const countRow = await env.DB.prepare('SELECT COUNT(1) AS count FROM ref_roster').first<{ count: number }>();
   if (Number(countRow?.count ?? 0) > 0) return;
 
-  const users = await env.DB.prepare('SELECT id FROM users ORDER BY created_at ASC').all<{ id: string }>();
+  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC').bind(SYSTEM_USER_ID).all<{ id: string }>();
   let index = 0;
   for (const user of users.results) {
     await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order, created_at) VALUES (?1, ?2, ?3, ?4)')
@@ -356,7 +357,7 @@ const ensureGrimaceUser = async (env: Env) => {
   await env.DB.prepare(
     'INSERT INTO users (id, name, nickname, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO NOTHING',
   )
-    .bind('grimace-bot', 'Grimace', null, new Date().getFullYear(), nowIso())
+    .bind(SYSTEM_USER_ID, 'Grimace', null, new Date().getFullYear(), nowIso())
     .run();
 };
 
