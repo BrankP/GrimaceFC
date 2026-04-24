@@ -7,6 +7,7 @@ import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
 import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
+import { canUsePushNotifications, syncPushSubscription } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
 
@@ -47,6 +48,7 @@ export default function App() {
   const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
+  const [pushStatus, setPushStatus] = useState<'idle' | 'enabled' | 'unsupported' | 'denied' | 'error'>('idle');
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -119,6 +121,55 @@ export default function App() {
   const isVisitor = Boolean(visitorUser);
   const canWrite = !isVisitor && teamPasscode.trim().length > 0;
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
+  const shouldPromptPush = !isVisitor && Boolean(currentUserId) && canUsePushNotifications() && pushStatus !== 'enabled' && Notification.permission !== 'denied';
+
+  useEffect(() => {
+    if (isVisitor || !currentUserId) return;
+    if (!canUsePushNotifications()) {
+      setPushStatus('unsupported');
+      return;
+    }
+
+    const init = async () => {
+      try {
+        const result = await syncPushSubscription(currentUserId);
+        if (result.ok) {
+          setPushStatus('enabled');
+          return;
+        }
+        if (result.reason === 'unsupported') {
+          setPushStatus('unsupported');
+          return;
+        }
+        if (result.reason === 'denied') {
+          setPushStatus('denied');
+        }
+      } catch {
+        setPushStatus('error');
+      }
+    };
+
+    void init();
+  }, [currentUserId, isVisitor]);
+
+  const enablePush = async () => {
+    if (!currentUserId) return;
+    if (!canUsePushNotifications()) {
+      setPushStatus('unsupported');
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setPushStatus(permission === 'denied' ? 'denied' : 'idle');
+        return;
+      }
+      const result = await syncPushSubscription(currentUserId);
+      setPushStatus(result.ok ? 'enabled' : 'error');
+    } catch {
+      setPushStatus('error');
+    }
+  };
 
   const upsertUserByName = async ({ firstName, lastName, passcode, isVisitor: visitorMode }: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => {
     try {
@@ -255,6 +306,15 @@ export default function App() {
             <span className="badge header-chip">User: {currentUser ? currentUser.name : 'Guest'}</span>
           </div>
         </header>
+
+        {shouldPromptPush && (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <p style={{ margin: 0 }}>Enable push notifications to get alerted when someone tags you in chat.</p>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button type="button" onClick={() => void enablePush()}>Enable notifications</button>
+            </div>
+          </div>
+        )}
 
         {error && <p className="error">{error}</p>}
 
