@@ -210,11 +210,31 @@ const sanitizePushSubscription = (raw: unknown): WebPushSubscription | null => {
 };
 
 const derToJose = (der: Uint8Array, outputLength: number) => {
-  let offset = 3;
-  const rLength = der[offset - 1];
+  if (der[0] !== 0x30) throw new Error('Invalid DER signature');
+
+  let offset = 1;
+  let seqLen = der[offset];
+  offset += 1;
+  if (seqLen & 0x80) {
+    const lenBytes = seqLen & 0x7f;
+    seqLen = 0;
+    for (let idx = 0; idx < lenBytes; idx += 1) {
+      seqLen = (seqLen << 8) | der[offset];
+      offset += 1;
+    }
+  }
+
+  if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
+  offset += 1;
+  const rLength = der[offset];
+  offset += 1;
   let r = der.slice(offset, offset + rLength);
-  offset += rLength + 1;
-  const sLength = der[offset - 1];
+  offset += rLength;
+
+  if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
+  offset += 1;
+  const sLength = der[offset];
+  offset += 1;
   let s = der.slice(offset, offset + sLength);
   while (r.length > outputLength / 2 && r[0] === 0) r = r.slice(1);
   while (s.length > outputLength / 2 && s[0] === 0) s = s.slice(1);
@@ -283,6 +303,7 @@ const sendPushPing = async (env: Env, endpoint: string) => {
   if (!jwt) return { ok: false, status: 0 };
   const response = await fetch(endpoint, {
     method: 'POST',
+    body: null,
     headers: {
       TTL: '60',
       Urgency: 'high',
@@ -290,7 +311,8 @@ const sendPushPing = async (env: Env, endpoint: string) => {
       'Crypto-Key': `p256ecdsa=${vapid.publicKey}`,
     },
   });
-  return { ok: response.ok, status: response.status };
+  const responseText = response.ok ? '' : await response.text();
+  return { ok: response.ok, status: response.status, responseText };
 };
 
 const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
@@ -339,7 +361,11 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
       if (pushResult.status === 404 || pushResult.status === 410) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
       }
-      console.error('push_send_failed', { endpoint: subscription.endpoint.slice(0, 80), statusCode: pushResult.status });
+      console.error('push_send_failed', {
+        endpoint: subscription.endpoint.slice(0, 80),
+        statusCode: pushResult.status,
+        responseText: (pushResult.responseText ?? '').slice(0, 200),
+      });
     } catch (err) {
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
