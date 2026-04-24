@@ -53,6 +53,9 @@ export const postLineup = (payload: Omit<Lineup, 'id' | 'updatedAt'> & { id?: st
 export const postAvailability = (payload: { eventId: string; userId: string; status: AvailabilityStatus }) =>
   api<DataStore['availability'][number]>('/availability', { method: 'POST', body: JSON.stringify(payload) });
 
+export const clearAvailability = (payload: { eventId: string; userId: string }) =>
+  api<{ ok: true }>('/availability/clear', { method: 'POST', body: JSON.stringify(payload) });
+
 export const getNextRef = () => api<NextRefState>('/next-ref');
 export const passNextRef = (payload: { userId: string; eventId: string }) =>
   api<NextRefState>('/next-ref/pass', { method: 'POST', body: JSON.stringify(payload) });

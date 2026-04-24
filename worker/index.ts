@@ -66,6 +66,38 @@ const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | nul
   return null;
 };
 
+
+const maybePostAttendanceReminders = async (env: Env) => {
+  const reminderDate = new Date().toISOString().slice(0, 10);
+  const events = await env.DB.prepare(
+    "SELECT id, event_type, opponent, occasion FROM events WHERE date(date) = date('now', '+2 day') ORDER BY date ASC LIMIT 20",
+  ).all<{ id: string; event_type: 'Game' | 'Sesh'; opponent: string | null; occasion: string | null }>();
+
+  for (const event of events.results) {
+    const missing = await env.DB.prepare(
+      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL ORDER BY users.name ASC',
+    )
+      .bind(event.id)
+      .all<{ name: string }>();
+
+    if (!missing.results.length) continue;
+
+    const marker = `[attendance-reminder:${event.id}:${reminderDate}]`;
+    const existing = await env.DB.prepare('SELECT id FROM messages WHERE text LIKE ?1 LIMIT 1')
+      .bind(`%${marker}%`)
+      .first<{ id: string }>();
+    if (existing) continue;
+
+    const subject = event.event_type === 'Game' ? `${event.opponent ?? 'upcoming game'}` : `${event.occasion ?? 'upcoming session'}`;
+    const names = missing.results.map((row) => row.name).join(', ');
+    const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days). ${marker}`;
+
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
+      .bind(createId('msg'), 'grimace-bot', text, nowIso())
+      .run();
+  }
+};
+
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
   const provided = request.headers.get('x-team-passcode');
@@ -110,6 +142,7 @@ const schemaStatements = [
     beer_duty_user_id TEXT,
     ref_duty_user_id TEXT,
     location TEXT NOT NULL,
+    map_address TEXT,
     opponent TEXT,
     occasion TEXT,
     team_name TEXT NOT NULL,
@@ -217,6 +250,9 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
   if (!existingColumns.has('ref_duty_user_id')) {
     await env.DB.prepare('ALTER TABLE events ADD COLUMN ref_duty_user_id TEXT').run();
+  }
+  if (!existingColumns.has('map_address')) {
+    await env.DB.prepare('ALTER TABLE events ADD COLUMN map_address TEXT').run();
   }
 };
 
@@ -326,44 +362,24 @@ const getTopRosterUser = (env: Env) =>
     'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
   ).first<{ user_id: string; name: string; roster_order: number }>();
 
-const getNextEligibleRosterUser = async (env: Env, eventId: string) => {
-  const eligible = await env.DB.prepare(
-    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE NOT EXISTS (SELECT 1 FROM next_ref_passes p WHERE p.event_id = ?1 AND p.user_id = ref_roster.user_id) ORDER BY ref_roster.roster_order ASC LIMIT 1',
-  ).bind(eventId).first<{ user_id: string; name: string; roster_order: number }>();
-  if (eligible) return eligible;
-  return getTopRosterUser(env);
-};
+const getNextEligibleRosterUser = async (env: Env, eventId: string, currentUserId: string) => {
+  const rosterRows = await env.DB.prepare(
+    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC, ref_roster.created_at ASC',
+  ).all<{ user_id: string; name: string; roster_order: number }>();
+  if (!rosterRows.results.length) return null;
 
-const writeRosterOrder = async (env: Env, orderedUserIds: string[]) => {
-  for (let index = 0; index < orderedUserIds.length; index += 1) {
-    await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
-      .bind(-(index + 1), orderedUserIds[index])
-      .run();
-  }
-  for (let index = 0; index < orderedUserIds.length; index += 1) {
-    await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
-      .bind(index, orderedUserIds[index])
-      .run();
-  }
-};
+  const passRows = await env.DB.prepare('SELECT user_id FROM next_ref_passes WHERE event_id = ?1')
+    .bind(eventId)
+    .all<{ user_id: string }>();
+  const passed = new Set(passRows.results.map((row) => row.user_id));
 
-const normalizeRosterOrder = async (env: Env) => {
-  const rosterRows = await env.DB.prepare('SELECT user_id FROM ref_roster ORDER BY roster_order ASC, created_at ASC').all<{ user_id: string }>();
-  await writeRosterOrder(env, rosterRows.results.map((row) => row.user_id));
-};
-
-const moveRosterUserToBottom = async (env: Env, userId: string) => {
-  const rosterRows = await env.DB.prepare('SELECT user_id FROM ref_roster ORDER BY roster_order ASC, created_at ASC').all<{ user_id: string }>();
-  const orderedUserIds = rosterRows.results.map((row) => row.user_id);
-  const existingIndex = orderedUserIds.findIndex((id) => id === userId);
-  if (existingIndex < 0) return;
-  if (existingIndex === orderedUserIds.length - 1) {
-    await normalizeRosterOrder(env);
-    return;
+  const currentIndex = Math.max(0, rosterRows.results.findIndex((row) => row.user_id === currentUserId));
+  for (let offset = 1; offset <= rosterRows.results.length; offset += 1) {
+    const candidate = rosterRows.results[(currentIndex + offset) % rosterRows.results.length];
+    if (!passed.has(candidate.user_id)) return candidate;
   }
-  orderedUserIds.splice(existingIndex, 1);
-  orderedUserIds.push(userId);
-  await writeRosterOrder(env, orderedUserIds);
+
+  return rosterRows.results[currentIndex];
 };
 
 const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
@@ -419,8 +435,6 @@ const finalizeNextRefCycle = async (
     .bind(createId('refhist'), state.event_id, state.current_user_id, Number(state.running_balance), JSON.stringify(passed), state.accepted_at, nowIso())
     .run();
 
-  await moveRosterUserToBottom(env, state.current_user_id);
-  await normalizeRosterOrder(env);
   await env.DB.prepare('DELETE FROM next_ref_passes WHERE event_id = ?1').bind(state.event_id).run();
   await env.DB.prepare('DELETE FROM next_ref_state WHERE event_id = ?1').bind(state.event_id).run();
 };
@@ -440,7 +454,7 @@ const alignPendingCurrentRef = async (
   state: { event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted' },
 ) => {
   if (state.status !== 'Pending Decision') return state;
-  const eligible = await getNextEligibleRosterUser(env, state.event_id);
+  const eligible = await getNextEligibleRosterUser(env, state.event_id, state.current_user_id);
   if (!eligible || eligible.user_id === state.current_user_id) return state;
   await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
     .bind(eligible.user_id, nowIso(), state.event_id)
@@ -474,7 +488,7 @@ const buildNextRefPayload = async (env: Env) => {
 
   const state = trackedState ?? (await ensureNextRefStateForEvent(env, nextAway.id));
   if (state && state.status === 'Pending Decision') {
-    const eligible = await getNextEligibleRosterUser(env, nextAway.id);
+    const eligible = await getNextEligibleRosterUser(env, nextAway.id, state.current_user_id);
     if (eligible && eligible.user_id !== state.current_user_id) {
       await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
         .bind(eligible.user_id, nowIso(), nextAway.id)
@@ -528,8 +542,9 @@ async function handleApi(request: Request, env: Env) {
 
   try {
     if (pathname === '/api/events' && method === 'GET') {
+      await maybePostAttendanceReminders(env);
       const { results } = await env.DB.prepare(
-        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
       ).all();
 
       return jsonResponse(
@@ -542,6 +557,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -554,7 +570,7 @@ async function handleApi(request: Request, env: Env) {
 
     if (pathname === '/api/next-game' && method === 'GET') {
       const row = await env.DB.prepare(
-        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
       ).first();
       if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
       return jsonResponse(
@@ -567,6 +583,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -635,9 +652,7 @@ async function handleApi(request: Request, env: Env) {
         .bind(createId('refpass'), body.eventId, body.userId, passedAt)
         .run();
 
-      await moveRosterUserToBottom(env, body.userId);
-      await normalizeRosterOrder(env);
-      const nextEligible = await getNextEligibleRosterUser(env, body.eventId);
+      const nextEligible = await getNextEligibleRosterUser(env, body.eventId, body.userId);
       if (!nextEligible) return errorResponse('Ref roster is empty', 400);
 
       await env.DB.prepare(
@@ -669,10 +684,11 @@ async function handleApi(request: Request, env: Env) {
       const passers = await env.DB.prepare('SELECT users.name AS name FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC')
         .bind(body.eventId)
         .all<{ name: string }>();
+      const eventMeta = await env.DB.prepare('SELECT opponent FROM events WHERE id = ?1 LIMIT 1').bind(body.eventId).first<{ opponent: string | null }>();
       const passerNames = passers.results.map((row) => row.name);
       const messageText = passerNames.length
         ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
-        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. No peeps owe them $50.`;
+        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
 
       await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
         .bind(createId('msg'), 'grimace-bot', messageText, nowIso())
@@ -854,6 +870,17 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ id, eventId: body.eventId, userId: body.userId, status: body.status, updatedAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
+    if (pathname === '/api/availability/clear' && method === 'POST') {
+      const body = (await request.json()) as { eventId?: string; userId?: string };
+      if (!body.eventId || !body.userId) return errorResponse('eventId and userId are required');
+
+      await env.DB.prepare('DELETE FROM availability WHERE event_id = ?1 AND user_id = ?2')
+        .bind(body.eventId, body.userId)
+        .run();
+
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/users/upsert' && method === 'POST') {
       const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
       if (!body.name?.trim()) return errorResponse('name is required');
@@ -871,12 +898,6 @@ async function handleApi(request: Request, env: Env) {
         'INSERT INTO users (id, name, nickname, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
       )
         .bind(id, normalized, nickname, createdYear, createdAt)
-        .run();
-
-      await env.DB.prepare(
-        "INSERT INTO availability (id, event_id, user_id, status, updated_at, created_at) SELECT ?1 || '-' || events.id, events.id, ?2, 'not_available', ?3, ?4 FROM events WHERE NOT EXISTS (SELECT 1 FROM availability WHERE availability.event_id = events.id AND availability.user_id = ?2)",
-      )
-        .bind(id, id, nowIso(), createdAt)
         .run();
 
       return jsonResponse({ id, name: normalized, nickname, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });

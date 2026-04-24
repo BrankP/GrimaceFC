@@ -12,6 +12,7 @@ export function NextRefPage() {
   const [isWorking, setWorking] = useState(false);
   const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
+  const [showRosterModal, setShowRosterModal] = useState(false);
 
   const refresh = async () => {
     try {
@@ -40,6 +41,22 @@ export function NextRefPage() {
     () => Array.from(new Set(state?.passList.map((entry) => entry.name) ?? [])),
     [state?.passList],
   );
+
+
+  const currentRosterIndex = useMemo(() => {
+    if (!state?.roster.length || !state.currentRefUserId) return -1;
+    return state.roster.findIndex((entry) => entry.userId === state.currentRefUserId);
+  }, [state?.roster, state?.currentRefUserId]);
+
+  const rosterPreview = useMemo(() => {
+    if (!state?.roster.length) return [];
+    if (currentRosterIndex < 0) return state.roster.slice(0, 5);
+
+    return [-2, -1, 0, 1, 2].map((offset) => {
+      const index = (currentRosterIndex + offset + state.roster.length) % state.roster.length;
+      return state.roster[index];
+    });
+  }, [state?.roster, currentRosterIndex]);
 
   const runAction = async (actionType: 'pass' | 'accept' | 'complete', action: () => Promise<NextRefState>) => {
     setWorking(true);
@@ -153,16 +170,38 @@ export function NextRefPage() {
       <article className="card">
         <p className="next-ref-subtitle">Ref Roster</p>
         <div className="stack">
-          {state?.roster.map((entry, index) => (
+          {rosterPreview.map((entry) => (
             <p
-              key={entry.userId}
-              className={`next-ref-roster-item ${index === 0 ? 'is-current' : ''}`}
+              key={`preview-${entry.userId}-${entry.order}`}
+              className={`next-ref-roster-item ${entry.userId === state?.currentRefUserId ? 'is-current' : ''}`}
             >
               #{entry.order + 1} {entry.name}
             </p>
           ))}
         </div>
+        <div className="row" style={{ marginTop: '.6rem' }}>
+          <button type="button" className="secondary" onClick={() => setShowRosterModal(true)}>Expand Roster</button>
+        </div>
       </article>
+
+      {showRosterModal && (
+        <div className="modal-backdrop" onClick={() => setShowRosterModal(false)}>
+          <article className="card modal" onClick={(e) => e.stopPropagation()}>
+            <p className="next-ref-subtitle">Full Ref Roster</p>
+            <div className="next-ref-roster-scroll stack">
+              {state?.roster.map((entry) => (
+                <p
+                  key={`modal-${entry.userId}-${entry.order}`}
+                  className={`next-ref-roster-item ${entry.userId === state?.currentRefUserId ? 'is-current' : ''}`}
+                >
+                  #{entry.order + 1} {entry.name}
+                </p>
+              ))}
+            </div>
+            <button type="button" onClick={() => setShowRosterModal(false)}>Close</button>
+          </article>
+        </div>
+      )}
 
       <article className="card">
         <p className="next-ref-subtitle">Completed History</p>

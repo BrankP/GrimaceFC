@@ -7,7 +7,7 @@ import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
-import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
+import { clearAvailability, loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
 import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
 
@@ -21,7 +21,8 @@ type AppState = {
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
-  getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
+  clearAvailability: (eventId: string, userId: string) => Promise<void>;
+  getAvailability: (eventId: string, userId: string) => AvailabilityStatus | null;
   getDisplayName: (userId: string) => string;
   getUserName: (userId: string) => string;
 };
@@ -147,8 +148,15 @@ export default function App() {
     });
   };
 
-  const getAvailability = (eventId: string, userId: string): AvailabilityStatus =>
-    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? 'not_available';
+
+  const clearAvailabilityForUser = async (eventId: string, userId: string) => {
+    await withWriteGuard(async () => {
+      await clearAvailability({ eventId, userId });
+    });
+  };
+
+  const getAvailability = (eventId: string, userId: string): AvailabilityStatus | null =>
+    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? null;
 
   const saveLineup = async (lineup: Lineup) => {
     await withWriteGuard(async () => {
@@ -192,6 +200,7 @@ export default function App() {
         saveNickname,
         saveLineup,
         setAvailability,
+        clearAvailability: clearAvailabilityForUser,
         getAvailability,
         getDisplayName,
         getUserName,
