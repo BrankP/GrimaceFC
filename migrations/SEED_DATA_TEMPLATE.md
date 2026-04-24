@@ -1,8 +1,8 @@
 # Seed Data Worksheet
 
-Use this worksheet to provide fresh seed data. Fill in rows in each table section, then I can convert this directly back into `migrations/0002_seed.sql`.
+This worksheet now mirrors the current requested seed set.
 
-## 1) `users`
+## 1) `users` (20)
 | id | name | nickname | created_year | created_at (ISO) |
 |---|---|---|---:|---|
 | usr-001 | Brad Fox |  | 2026 | 2026-01-01T00:00:00Z |
@@ -26,7 +26,8 @@ Use this worksheet to provide fresh seed data. Fill in rows in each table sectio
 | usr-019 | Tom Jenkins |  | 2026 | 2026-01-01T00:00:00Z |
 | usr-020 | Zac Reyes |  | 2026 | 2026-01-01T00:00:00Z |
 
-| id | event_type (`Game`/`Sesh`) | date (ISO) | day_of_week | home_away (`Home`/`Away`/null) | beer_duty_user_id | ref_duty_user_id | location | map_address | opponent | occasion | team_name | is_next_up (0/1) |
+## 2) `events` (15)
+| id | event_type | date (ISO) | day_of_week | home_away | beer_duty_user_id | ref_duty_user_id | location | map_address | opponent | occasion | team_name | is_next_up |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|
 | evt-001 | Game | 2026-05-02T13:00:00Z | Saturday | Home | usr-009 |  | Brookvale | Millers Reserve | Brookvale | Game | Grimace FC | 1 |
 | evt-002 | Game | 2026-05-09T15:00:00Z | Saturday | Away | usr-011 |  | Saint Augustine’s | Passmore Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
@@ -44,83 +45,29 @@ Use this worksheet to provide fresh seed data. Fill in rows in each table sectio
 | evt-014 | Game | 2026-08-08T15:00:00Z | Saturday | Home | usr-019 |  | Wakehurst | Millers Reserve | Wakehurst | Game | Grimace FC | 0 |
 | evt-015 | Game | 2026-08-15T13:00:00Z | Saturday | Away | usr-005 |  | Curl Curl | Adam Street | Curl Curl | Game | Grimace FC | 0 |
 
-## 3) `messages`
-| id | user_id | text | created_at (ISO) |
-|---|---|---|---|
-
-## 4) `fines`
-| id | who_user_id | amount | reason | submitted_by_user_id | submitted_at (ISO) |
-|---|---|---:|---|---|---|
-
-## 5) `lineups`
-| id | event_id | formation | positions_json | subs_json | not_available_json | beer_duty_user_id | ref_duty_user_id | updated_at (ISO) |
-|---|---|---|---|---|---|---|---|---|
-| lineup-evt-001 | evt-001 | 4-3-3 | `{}` | `[]` | `[]` |  |  | 2026-01-01T00:00:00Z |
-
-## 6) `availability`
-| id | event_id | user_id | status (`available`/`not_available`) | updated_at (ISO) |
-|---|---|---|---|---|
-
-## 7) `ref_roster`
+## 7) `ref_roster` (DB table stores 1 row per user)
 | user_id | roster_order | created_at (ISO) |
 |---|---:|---|
-| usr-012 | 1 | 2026-01-01T00:00:00Z |
-| usr-011 | 2 | 2026-01-01T00:00:00Z |
-| usr-004 | 3 | 2026-01-01T00:00:00Z |
-| usr-015 | 4 | 2026-01-01T00:00:00Z |
-| usr-018 | 5 | 2026-01-01T00:00:00Z |
-| usr-006 | 6 | 2026-01-01T00:00:00Z |
-| usr-016 | 7 | 2026-01-01T00:00:00Z |
-| usr-013 | 8 | 2026-01-01T00:00:00Z |
-| usr-002 | 9 | 2026-01-01T00:00:00Z |
-| usr-007 | 10 | 2026-01-01T00:00:00Z |
-| usr-014 | 11 | 2026-01-01T00:00:00Z |
-| usr-003 | 12 | 2026-01-01T00:00:00Z |
-| usr-001 | 13 | 2026-01-01T00:00:00Z |
-| usr-005 | 14 | 2026-01-01T00:00:00Z |
-| usr-019 | 15 | 2026-01-01T00:00:00Z |
-| usr-017 | 16 | 2026-01-01T00:00:00Z |
-| usr-009 | 17 | 2026-01-01T00:00:00Z |
-| usr-020 | 18 | 2026-01-01T00:00:00Z |
-| usr-010 | 19 | 2026-01-01T00:00:00Z |
-| usr-008 | 20 | 2026-01-01T00:00:00Z |
-| usr-016 | 21 | 2026-01-01T00:00:00Z |
-| usr-001 | 22 | 2026-01-01T00:00:00Z |
-| usr-014 | 23 | 2026-01-01T00:00:00Z |
-| usr-005 | 24 | 2026-01-01T00:00:00Z |
-| usr-012 | 25 | 2026-01-01T00:00:00Z |
-| usr-015 | 26 | 2026-01-01T00:00:00Z |
-| usr-003 | 27 | 2026-01-01T00:00:00Z |
-| usr-002 | 28 | 2026-01-01T00:00:00Z |
-| usr-004 | 29 | 2026-01-01T00:00:00Z |
-| usr-006 | 30 | 2026-01-01T00:00:00Z |
-| usr-018 | 31 | 2026-01-01T00:00:00Z |
-| usr-011 | 32 | 2026-01-01T00:00:00Z |
-| usr-007 | 33 | 2026-01-01T00:00:00Z |
-| usr-013 | 34 | 2026-01-01T00:00:00Z |
-| usr-008 | 35 | 2026-01-01T00:00:00Z |
-| usr-017 | 36 | 2026-01-01T00:00:00Z |
-| usr-020 | 37 | 2026-01-01T00:00:00Z |
-| usr-010 | 38 | 2026-01-01T00:00:00Z |
-| usr-009 | 39 | 2026-01-01T00:00:00Z |
-| usr-019 | 40 | 2026-01-01T00:00:00Z |
+| usr-012 | 0 | 2026-01-01T00:00:00Z |
+| usr-011 | 1 | 2026-01-01T00:00:00Z |
+| usr-004 | 2 | 2026-01-01T00:00:00Z |
+| usr-015 | 3 | 2026-01-01T00:00:00Z |
+| usr-018 | 4 | 2026-01-01T00:00:00Z |
+| usr-006 | 5 | 2026-01-01T00:00:00Z |
+| usr-016 | 6 | 2026-01-01T00:00:00Z |
+| usr-013 | 7 | 2026-01-01T00:00:00Z |
+| usr-002 | 8 | 2026-01-01T00:00:00Z |
+| usr-007 | 9 | 2026-01-01T00:00:00Z |
+| usr-014 | 10 | 2026-01-01T00:00:00Z |
+| usr-003 | 11 | 2026-01-01T00:00:00Z |
+| usr-001 | 12 | 2026-01-01T00:00:00Z |
+| usr-005 | 13 | 2026-01-01T00:00:00Z |
+| usr-019 | 14 | 2026-01-01T00:00:00Z |
+| usr-017 | 15 | 2026-01-01T00:00:00Z |
+| usr-009 | 16 | 2026-01-01T00:00:00Z |
+| usr-020 | 17 | 2026-01-01T00:00:00Z |
+| usr-010 | 18 | 2026-01-01T00:00:00Z |
+| usr-008 | 19 | 2026-01-01T00:00:00Z |
 
-## 8) `next_ref_state`
-| event_id | current_user_id | status (`Pending Decision`/`Accepted`) | running_balance | accepted_at (ISO or null) | updated_at (ISO) | created_at (ISO) |
-|---|---|---|---:|---|---|---|
-
-## 9) `next_ref_passes`
-| id | event_id | user_id | passed_at (ISO) |
-|---|---|---|---|
-
-## 10) `next_ref_history`
-| id | event_id | referee_user_id | final_balance | passed_json | accepted_at (ISO or null) | completed_at (ISO) |
-|---|---|---|---:|---|---|---|
-
----
-
-## Notes
-- Keep all IDs unique.
-- `*_json` columns should be valid JSON strings.
-- Use UTC ISO timestamps (`YYYY-MM-DDTHH:mm:ssZ`).
-- Use blank cells for `NULL`.
+## Remaining tables
+Messages, fines, availability, next_ref_state, next_ref_passes, and next_ref_history are currently blank/seed-minimal and can be expanded as needed.
