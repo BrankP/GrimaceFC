@@ -2,13 +2,12 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { BottomNav } from './components/BottomNav';
 import { NameGate } from './components/NameGate';
-import { FinesPage } from './pages/FinesPage';
 import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
-import { loadAppData, postAvailability, postFine, postLineup, postMessage, upsertUser } from './services/dataService';
-import type { AvailabilityStatus, DataStore, Fine, Lineup, User } from './types/models';
+import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
+import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
 
 type AppState = {
@@ -17,11 +16,11 @@ type AppState = {
   canEditLineup: boolean;
   upsertUserByName: (name: string, passcode: string) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
-  addFine: (fine: Omit<Fine, 'id' | 'submittedAt'>) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
-  getAvailability: (eventId: string, userId: string) => AvailabilityStatus;
+  clearAvailability: (eventId: string, userId: string) => Promise<void>;
+  getAvailability: (eventId: string, userId: string) => AvailabilityStatus | null;
   getDisplayName: (userId: string) => string;
   getUserName: (userId: string) => string;
 };
@@ -42,7 +41,6 @@ export default function App() {
   const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
-  const [showFineModal, setShowFineModal] = useState(false);
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -127,11 +125,6 @@ export default function App() {
     });
   };
 
-  const addFine = async (fine: Omit<Fine, 'id' | 'submittedAt'>) => {
-    await withWriteGuard(async () => {
-      await postFine(fine);
-    });
-  };
 
   const saveNickname = async (userId: string, nickname: string) => {
     const user = data?.users.find((u) => u.id === userId);
@@ -147,8 +140,15 @@ export default function App() {
     });
   };
 
-  const getAvailability = (eventId: string, userId: string): AvailabilityStatus =>
-    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? 'not_available';
+
+  const clearAvailabilityForUser = async (eventId: string, userId: string) => {
+    await withWriteGuard(async () => {
+      await clearAvailability({ eventId, userId });
+    });
+  };
+
+  const getAvailability = (eventId: string, userId: string): AvailabilityStatus | null =>
+    data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? null;
 
   const saveLineup = async (lineup: Lineup) => {
     await withWriteGuard(async () => {
@@ -188,10 +188,10 @@ export default function App() {
         canEditLineup,
         upsertUserByName,
         addMessage,
-        addFine,
         saveNickname,
         saveLineup,
         setAvailability,
+        clearAvailability: clearAvailabilityForUser,
         getAvailability,
         getDisplayName,
         getUserName,
@@ -204,7 +204,6 @@ export default function App() {
             <p>Social Team Hub</p>
           </div>
           <div className="row">
-            <button className="secondary header-chip" type="button" onClick={() => setShowFineModal(true)}>Fine Submission</button>
             <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
           </div>
         </header>
@@ -216,7 +215,6 @@ export default function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/chat" replace />} />
               <Route path="/upcoming" element={<UpcomingGamesPage />} />
-              <Route path="/fines" element={<FinesPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/game" element={<NextGamePage />} />
               <Route path="/next-ref" element={<NextRefPage />} />
@@ -248,38 +246,6 @@ export default function App() {
               <div className="row">
                 <button type="submit">Save</button>
                 <button className="secondary" type="button" onClick={() => setShowPasscodeModal(false)}>Close</button>
-              </div>
-            </form>
-          </div>
-        )}
-
-        {showFineModal && currentUser && data && (
-          <div className="modal-backdrop" role="dialog" aria-modal="true">
-            <form
-              className="card modal"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const formData = new FormData(event.currentTarget);
-                void addFine({
-                  whoUserId: String(formData.get('whoUserId')),
-                  submittedByUserId: currentUser.id,
-                  amount: Number(formData.get('amount')),
-                  reason: String(formData.get('reason')),
-                }).then(() => {
-                  setShowFineModal(false);
-                  event.currentTarget.reset();
-                });
-              }}
-            >
-              <h3>Submit Fine</h3>
-              <select name="whoUserId" required>
-                {data.users.map((user) => <option key={user.id} value={user.id}>{getUserName(user.id)}</option>)}
-              </select>
-              <input className="no-spinner" name="amount" type="number" min="0" step="0.5" placeholder="Amount" defaultValue={5} required />
-              <input name="reason" placeholder="Reason" required />
-              <div className="row">
-                <button type="submit">Save Fine</button>
-                <button type="button" className="secondary" onClick={() => setShowFineModal(false)}>Cancel</button>
               </div>
             </form>
           </div>

@@ -66,6 +66,38 @@ const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | nul
   return null;
 };
 
+
+const maybePostAttendanceReminders = async (env: Env) => {
+  const reminderDate = new Date().toISOString().slice(0, 10);
+  const events = await env.DB.prepare(
+    "SELECT id, event_type, opponent, occasion FROM events WHERE date(date) = date('now', '+2 day') ORDER BY date ASC LIMIT 20",
+  ).all<{ id: string; event_type: 'Game' | 'Sesh'; opponent: string | null; occasion: string | null }>();
+
+  for (const event of events.results) {
+    const missing = await env.DB.prepare(
+      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL ORDER BY users.name ASC',
+    )
+      .bind(event.id)
+      .all<{ name: string }>();
+
+    if (!missing.results.length) continue;
+
+    const marker = `[attendance-reminder:${event.id}:${reminderDate}]`;
+    const existing = await env.DB.prepare('SELECT id FROM messages WHERE text LIKE ?1 LIMIT 1')
+      .bind(`%${marker}%`)
+      .first<{ id: string }>();
+    if (existing) continue;
+
+    const subject = event.event_type === 'Game' ? `${event.opponent ?? 'upcoming game'}` : `${event.occasion ?? 'upcoming session'}`;
+    const names = missing.results.map((row) => row.name).join(', ');
+    const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days). ${marker}`;
+
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
+      .bind(createId('msg'), 'grimace-bot', text, nowIso())
+      .run();
+  }
+};
+
 const requireTeamPasscode = (request: Request, env: Env) => {
   if (!isWriteMethod(request.method)) return null;
   const provided = request.headers.get('x-team-passcode');
@@ -84,7 +116,7 @@ const requireAdminPasscode = (request: Request, env: Env) => {
 const cacheHeadersFor = (pathname: string) => {
   if (pathname === '/api/events' || pathname === '/api/next-game') return { 'Cache-Control': 'public, max-age=60' };
   if (pathname === '/api/next-ref' || pathname === '/api/next-ref/history') return { 'Cache-Control': 'no-store' };
-  if (pathname === '/api/messages' || pathname === '/api/fines') {
+  if (pathname === '/api/messages') {
     return { 'Cache-Control': 'public, max-age=20' };
   }
   if (pathname === '/api/lineup') return { 'Cache-Control': 'no-store' };
@@ -110,6 +142,7 @@ const schemaStatements = [
     beer_duty_user_id TEXT,
     ref_duty_user_id TEXT,
     location TEXT NOT NULL,
+    map_address TEXT,
     opponent TEXT,
     occasion TEXT,
     team_name TEXT NOT NULL,
@@ -124,17 +157,6 @@ const schemaStatements = [
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(user_id) REFERENCES users(id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS fines (
-    id TEXT PRIMARY KEY,
-    who_user_id TEXT NOT NULL,
-    amount REAL NOT NULL,
-    reason TEXT NOT NULL,
-    submitted_by_user_id TEXT NOT NULL,
-    submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    FOREIGN KEY(who_user_id) REFERENCES users(id),
-    FOREIGN KEY(submitted_by_user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS lineups (
     id TEXT PRIMARY KEY,
@@ -163,21 +185,22 @@ const schemaStatements = [
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS ref_roster (
-    user_id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
     roster_order INTEGER NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS next_ref_state (
     event_id TEXT PRIMARY KEY,
-    current_user_id TEXT NOT NULL,
+    current_ref_slot_id TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('Pending Decision','Accepted')),
     running_balance INTEGER NOT NULL DEFAULT 0,
     accepted_at TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(event_id) REFERENCES events(id),
-    FOREIGN KEY(current_user_id) REFERENCES users(id)
+    FOREIGN KEY(current_ref_slot_id) REFERENCES ref_roster(id)
   )`,
   `CREATE TABLE IF NOT EXISTS next_ref_passes (
     id TEXT PRIMARY KEY,
@@ -217,6 +240,24 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
   if (!existingColumns.has('ref_duty_user_id')) {
     await env.DB.prepare('ALTER TABLE events ADD COLUMN ref_duty_user_id TEXT').run();
+  }
+  if (!existingColumns.has('map_address')) {
+    await env.DB.prepare('ALTER TABLE events ADD COLUMN map_address TEXT').run();
+  }
+};
+
+const ensureRefRosterIdColumn = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(ref_roster)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('id')) {
+    await env.DB.prepare('ALTER TABLE ref_roster ADD COLUMN id TEXT').run();
+    const rows = await env.DB.prepare('SELECT user_id, roster_order FROM ref_roster ORDER BY roster_order ASC').all<{ user_id: string; roster_order: number }>();
+    for (const row of rows.results) {
+      await env.DB.prepare('UPDATE ref_roster SET id = ?1 WHERE user_id = ?2 AND roster_order = ?3')
+        .bind(`refslot-${String(Number(row.roster_order) + 1).padStart(3, '0')}`, row.user_id, row.roster_order)
+        .run();
+    }
   }
 };
 
@@ -260,8 +301,8 @@ const ensureRefRosterSeed = async (env: Env) => {
   const users = await env.DB.prepare('SELECT id FROM users ORDER BY created_at ASC').all<{ id: string }>();
   let index = 0;
   for (const user of users.results) {
-    await env.DB.prepare('INSERT INTO ref_roster (user_id, roster_order, created_at) VALUES (?1, ?2, ?3)')
-      .bind(user.id, index, nowIso())
+    await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order, created_at) VALUES (?1, ?2, ?3, ?4)')
+      .bind(createId('refslot'), user.id, index, nowIso())
       .run();
     index += 1;
   }
@@ -283,6 +324,7 @@ const ensureSchema = async (env: Env) => {
       }
       await ensureEventDutyColumns(env);
       await ensureLineupDutyColumns(env);
+      await ensureRefRosterIdColumn(env);
       await ensureDefaultDutyAssignments(env);
       await ensureRefRosterSeed(env);
       await ensureGrimaceUser(env);
@@ -323,67 +365,47 @@ const getNextAwayEvent = (env: Env) =>
 
 const getTopRosterUser = (env: Env) =>
   env.DB.prepare(
-    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
-  ).first<{ user_id: string; name: string; roster_order: number }>();
+    'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
+  ).first<{ id: string; user_id: string; name: string; roster_order: number }>();
 
-const getNextEligibleRosterUser = async (env: Env, eventId: string) => {
-  const eligible = await env.DB.prepare(
-    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE NOT EXISTS (SELECT 1 FROM next_ref_passes p WHERE p.event_id = ?1 AND p.user_id = ref_roster.user_id) ORDER BY ref_roster.roster_order ASC LIMIT 1',
-  ).bind(eventId).first<{ user_id: string; name: string; roster_order: number }>();
-  if (eligible) return eligible;
-  return getTopRosterUser(env);
-};
+const getNextEligibleRosterUser = async (env: Env, eventId: string, currentRefSlotId: string) => {
+  const rosterRows = await env.DB.prepare(
+    'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC, ref_roster.created_at ASC',
+  ).all<{ id: string; user_id: string; name: string; roster_order: number }>();
+  if (!rosterRows.results.length) return null;
 
-const writeRosterOrder = async (env: Env, orderedUserIds: string[]) => {
-  for (let index = 0; index < orderedUserIds.length; index += 1) {
-    await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
-      .bind(-(index + 1), orderedUserIds[index])
-      .run();
+  const passRows = await env.DB.prepare('SELECT user_id FROM next_ref_passes WHERE event_id = ?1')
+    .bind(eventId)
+    .all<{ user_id: string }>();
+  const passed = new Set(passRows.results.map((row) => row.user_id));
+
+  const currentIndex = Math.max(0, rosterRows.results.findIndex((row) => row.id === currentRefSlotId));
+  for (let offset = 1; offset <= rosterRows.results.length; offset += 1) {
+    const candidate = rosterRows.results[(currentIndex + offset) % rosterRows.results.length];
+    if (!passed.has(candidate.user_id)) return candidate;
   }
-  for (let index = 0; index < orderedUserIds.length; index += 1) {
-    await env.DB.prepare('UPDATE ref_roster SET roster_order = ?1 WHERE user_id = ?2')
-      .bind(index, orderedUserIds[index])
-      .run();
-  }
-};
 
-const normalizeRosterOrder = async (env: Env) => {
-  const rosterRows = await env.DB.prepare('SELECT user_id FROM ref_roster ORDER BY roster_order ASC, created_at ASC').all<{ user_id: string }>();
-  await writeRosterOrder(env, rosterRows.results.map((row) => row.user_id));
-};
-
-const moveRosterUserToBottom = async (env: Env, userId: string) => {
-  const rosterRows = await env.DB.prepare('SELECT user_id FROM ref_roster ORDER BY roster_order ASC, created_at ASC').all<{ user_id: string }>();
-  const orderedUserIds = rosterRows.results.map((row) => row.user_id);
-  const existingIndex = orderedUserIds.findIndex((id) => id === userId);
-  if (existingIndex < 0) return;
-  if (existingIndex === orderedUserIds.length - 1) {
-    await normalizeRosterOrder(env);
-    return;
-  }
-  orderedUserIds.splice(existingIndex, 1);
-  orderedUserIds.push(userId);
-  await writeRosterOrder(env, orderedUserIds);
+  return rosterRows.results[currentIndex];
 };
 
 const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
   const existing = await env.DB.prepare(
-    'SELECT event_id, current_user_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
-  ).bind(eventId).first<{ event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
+    'SELECT event_id, current_ref_slot_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
+  ).bind(eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
   if (existing) return existing;
 
   const top = await getTopRosterUser(env);
   if (!top) return null;
   const createdAt = nowIso();
   await env.DB.prepare(
-    'INSERT INTO next_ref_state (event_id, current_user_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+    'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
   )
     .bind(eventId, top.user_id, 'Pending Decision', 0, null, createdAt, createdAt)
     .run();
 
   return {
     event_id: eventId,
-    current_user_id: top.user_id,
+    current_ref_slot_id: top.id,
     status: 'Pending Decision' as const,
     running_balance: 0,
     accepted_at: null,
@@ -392,7 +414,7 @@ const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
 
 type NextRefStateRow = {
   event_id: string;
-  current_user_id: string;
+  current_ref_slot_id: string;
   status: 'Pending Decision' | 'Accepted';
   running_balance: number;
   accepted_at: string | null;
@@ -401,26 +423,26 @@ type NextRefStateRow = {
 
 const getTrackedNextRefState = (env: Env) =>
   env.DB.prepare(
-    "SELECT s.event_id, s.current_user_id, s.status, s.running_balance, s.accepted_at, e.date AS event_date FROM next_ref_state s JOIN events e ON e.id = s.event_id WHERE e.event_type = 'Game' AND e.home_away = 'Away' ORDER BY e.date ASC LIMIT 1",
+    "SELECT s.event_id, s.current_ref_slot_id, s.status, s.running_balance, s.accepted_at, e.date AS event_date FROM next_ref_state s JOIN events e ON e.id = s.event_id WHERE e.event_type = 'Game' AND e.home_away = 'Away' ORDER BY e.date ASC LIMIT 1",
   ).first<NextRefStateRow>();
 
 const finalizeNextRefCycle = async (
   env: Env,
-  state: { event_id: string; current_user_id: string; running_balance: number; accepted_at: string | null },
+  state: { event_id: string; current_ref_slot_id: string; running_balance: number; accepted_at: string | null },
 ) => {
   const passRows = await env.DB.prepare(
     'SELECT next_ref_passes.user_id AS user_id, users.name AS name, next_ref_passes.passed_at AS passed_at FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC',
   ).bind(state.event_id).all<{ user_id: string; name: string; passed_at: string }>();
   const passed = passRows.results.map((row) => ({ userId: row.user_id, name: row.name, passedAt: row.passed_at }));
 
+  const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
+
   await env.DB.prepare(
     'INSERT INTO next_ref_history (id, event_id, referee_user_id, final_balance, passed_json, accepted_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
   )
-    .bind(createId('refhist'), state.event_id, state.current_user_id, Number(state.running_balance), JSON.stringify(passed), state.accepted_at, nowIso())
+    .bind(createId('refhist'), state.event_id, currentRefSlot?.user_id ?? '', Number(state.running_balance), JSON.stringify(passed), state.accepted_at, nowIso())
     .run();
 
-  await moveRosterUserToBottom(env, state.current_user_id);
-  await normalizeRosterOrder(env);
   await env.DB.prepare('DELETE FROM next_ref_passes WHERE event_id = ?1').bind(state.event_id).run();
   await env.DB.prepare('DELETE FROM next_ref_state WHERE event_id = ?1').bind(state.event_id).run();
 };
@@ -437,15 +459,19 @@ const autoAdvanceCompletedNextRefCycle = async (env: Env) => {
 
 const alignPendingCurrentRef = async (
   env: Env,
-  state: { event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted' },
+  state: { event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted' },
 ) => {
   if (state.status !== 'Pending Decision') return state;
-  const eligible = await getNextEligibleRosterUser(env, state.event_id);
-  if (!eligible || eligible.user_id === state.current_user_id) return state;
-  await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
-    .bind(eligible.user_id, nowIso(), state.event_id)
+  const hasCurrentPassed = await env.DB.prepare('SELECT id FROM next_ref_passes WHERE event_id = ?1 AND user_id = (SELECT user_id FROM ref_roster WHERE id = ?2 LIMIT 1) LIMIT 1')
+    .bind(state.event_id, state.current_ref_slot_id)
+    .first<{ id: string }>();
+  if (!hasCurrentPassed) return state;
+  const eligible = await getNextEligibleRosterUser(env, state.event_id, state.current_ref_slot_id);
+  if (!eligible || eligible.id === state.current_ref_slot_id) return state;
+  await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+    .bind(eligible.id, nowIso(), state.event_id)
     .run();
-  return { ...state, current_user_id: eligible.user_id };
+  return { ...state, current_ref_slot_id: eligible.id };
 };
 
 const buildNextRefPayload = async (env: Env) => {
@@ -457,8 +483,8 @@ const buildNextRefPayload = async (env: Env) => {
     ).bind(trackedState.event_id).first<NextAwayEventRow>()
     : await getNextAwayEvent(env);
   const rosterRows = await env.DB.prepare(
-    'SELECT ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC',
-  ).all<{ user_id: string; name: string; roster_order: number }>();
+    'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC',
+  ).all<{ id: string; user_id: string; name: string; roster_order: number }>();
 
   if (!nextAway) {
     return {
@@ -468,25 +494,25 @@ const buildNextRefPayload = async (env: Env) => {
       status: null,
       runningBalance: 0,
       passList: [],
-      roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order) })),
+      roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id })),
     };
   }
 
   const state = trackedState ?? (await ensureNextRefStateForEvent(env, nextAway.id));
   if (state && state.status === 'Pending Decision') {
-    const eligible = await getNextEligibleRosterUser(env, nextAway.id);
-    if (eligible && eligible.user_id !== state.current_user_id) {
-      await env.DB.prepare('UPDATE next_ref_state SET current_user_id = ?1, updated_at = ?2 WHERE event_id = ?3')
-        .bind(eligible.user_id, nowIso(), nextAway.id)
+    const eligible = await getNextEligibleRosterUser(env, nextAway.id, state.current_ref_slot_id);
+    if (eligible && eligible.id !== state.current_ref_slot_id) {
+      await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+        .bind(eligible.id, nowIso(), nextAway.id)
         .run();
-      state.current_user_id = eligible.user_id;
+      state.current_ref_slot_id = eligible.id;
     }
   }
   const passRows = await env.DB.prepare(
     'SELECT next_ref_passes.user_id AS user_id, users.name AS name, next_ref_passes.passed_at AS passed_at FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC',
   ).bind(nextAway.id).all<{ user_id: string; name: string; passed_at: string }>();
-  const currentRefNameRow = state
-    ? await env.DB.prepare('SELECT name FROM users WHERE id = ?1 LIMIT 1').bind(state.current_user_id).first<{ name: string }>()
+  const currentRefRow = state
+    ? await env.DB.prepare('SELECT ref_roster.user_id AS user_id, users.name AS name FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE ref_roster.id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string; name: string }>()
     : null;
 
   return {
@@ -502,12 +528,12 @@ const buildNextRefPayload = async (env: Env) => {
       teamName: nextAway.team_name,
       isNextUp: Boolean(nextAway.is_next_up),
     },
-    currentRefUserId: state?.current_user_id ?? null,
-    currentRefName: currentRefNameRow?.name ?? null,
+    currentRefUserId: currentRefRow?.user_id ?? null,
+    currentRefName: currentRefRow?.name ?? null,
     status: state?.status ?? null,
     runningBalance: Number(state?.running_balance ?? 0),
     passList: passRows.results.map((row) => ({ userId: row.user_id, name: row.name, passedAt: row.passed_at })),
-    roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order) })),
+    roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id })),
   };
 };
 
@@ -528,8 +554,9 @@ async function handleApi(request: Request, env: Env) {
 
   try {
     if (pathname === '/api/events' && method === 'GET') {
+      await maybePostAttendanceReminders(env);
       const { results } = await env.DB.prepare(
-        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
       ).all();
 
       return jsonResponse(
@@ -542,6 +569,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -554,7 +582,7 @@ async function handleApi(request: Request, env: Env) {
 
     if (pathname === '/api/next-game' && method === 'GET') {
       const row = await env.DB.prepare(
-        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
       ).first();
       if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
       return jsonResponse(
@@ -567,6 +595,7 @@ async function handleApi(request: Request, env: Env) {
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
           location: row.location,
+          mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
           teamName: row.team_name,
@@ -623,7 +652,8 @@ async function handleApi(request: Request, env: Env) {
       const rawState = await ensureNextRefStateForEvent(env, body.eventId);
       const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
-      if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can pass', 403);
+      const currentSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
+      if ((currentSlot?.user_id ?? null) !== body.userId) return errorResponse('Only the current assigned referee can pass', 403);
       if (state.status !== 'Pending Decision') return errorResponse('Cannot pass after duty has been accepted', 400);
       const hasAlreadyPassed = await env.DB.prepare('SELECT id FROM next_ref_passes WHERE event_id = ?1 AND user_id = ?2 LIMIT 1')
         .bind(body.eventId, body.userId)
@@ -635,15 +665,13 @@ async function handleApi(request: Request, env: Env) {
         .bind(createId('refpass'), body.eventId, body.userId, passedAt)
         .run();
 
-      await moveRosterUserToBottom(env, body.userId);
-      await normalizeRosterOrder(env);
-      const nextEligible = await getNextEligibleRosterUser(env, body.eventId);
+      const nextEligible = await getNextEligibleRosterUser(env, body.eventId, state.current_ref_slot_id);
       if (!nextEligible) return errorResponse('Ref roster is empty', 400);
 
       await env.DB.prepare(
-        'UPDATE next_ref_state SET current_user_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
+        'UPDATE next_ref_state SET current_ref_slot_id = ?1, status = ?2, running_balance = running_balance + 50, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
       )
-        .bind(nextEligible.user_id, 'Pending Decision', nowIso(), body.eventId)
+        .bind(nextEligible.id, 'Pending Decision', nowIso(), body.eventId)
         .run();
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
@@ -656,7 +684,8 @@ async function handleApi(request: Request, env: Env) {
       const rawState = await ensureNextRefStateForEvent(env, body.eventId);
       const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
       if (!state) return errorResponse('No next ref state found', 404);
-      if (state.current_user_id !== body.userId) return errorResponse('Only the current assigned referee can accept', 403);
+      const currentSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
+      if ((currentSlot?.user_id ?? null) !== body.userId) return errorResponse('Only the current assigned referee can accept', 403);
 
       await env.DB.prepare('UPDATE next_ref_state SET status = ?1, accepted_at = ?2, updated_at = ?3 WHERE event_id = ?4')
         .bind('Accepted', nowIso(), nowIso(), body.eventId)
@@ -669,10 +698,11 @@ async function handleApi(request: Request, env: Env) {
       const passers = await env.DB.prepare('SELECT users.name AS name FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC')
         .bind(body.eventId)
         .all<{ name: string }>();
+      const eventMeta = await env.DB.prepare('SELECT opponent FROM events WHERE id = ?1 LIMIT 1').bind(body.eventId).first<{ opponent: string | null }>();
       const passerNames = passers.results.map((row) => row.name);
       const messageText = passerNames.length
         ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
-        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. No peeps owe them $50.`;
+        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
 
       await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
         .bind(createId('msg'), 'grimace-bot', messageText, nowIso())
@@ -685,12 +715,13 @@ async function handleApi(request: Request, env: Env) {
       const body = (await request.json()) as { eventId?: string };
       if (!body.eventId) return errorResponse('eventId is required');
       const state = await env.DB.prepare(
-        'SELECT event_id, current_user_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
-      ).bind(body.eventId).first<{ event_id: string; current_user_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
+        'SELECT event_id, current_ref_slot_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
+      ).bind(body.eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
       if (!state) return errorResponse('No active state for this event', 404);
       if (state.status !== 'Accepted') return errorResponse('Ref duty must be accepted before completing', 400);
+      const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
       await env.DB.prepare('UPDATE events SET ref_duty_user_id = ?1 WHERE id = ?2')
-        .bind(state.current_user_id, body.eventId)
+        .bind(currentRefSlot?.user_id ?? null, body.eventId)
         .run();
       await finalizeNextRefCycle(env, state);
 
@@ -728,40 +759,6 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ id, userId: body.userId, text: body.text.trim(), createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
-    if (pathname === '/api/fines' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, who_user_id, amount, reason, submitted_by_user_id, submitted_at FROM fines ORDER BY submitted_at DESC LIMIT 50').all();
-      return jsonResponse(
-        results.map((row) => ({
-          id: row.id,
-          whoUserId: row.who_user_id,
-          amount: Number(row.amount),
-          reason: row.reason,
-          submittedByUserId: row.submitted_by_user_id,
-          submittedAt: row.submitted_at,
-        })),
-        200,
-        cacheHeadersFor(pathname),
-      );
-    }
-
-    if (pathname === '/api/fines' && method === 'POST') {
-      const body = (await request.json()) as { whoUserId?: string; amount?: number; reason?: string; submittedByUserId?: string };
-      if (!body.whoUserId || !body.submittedByUserId || !body.reason?.trim() || typeof body.amount !== 'number') {
-        return errorResponse('whoUserId, amount, reason, submittedByUserId are required');
-      }
-      const id = createId('fine');
-      const submittedAt = nowIso();
-
-      await env.DB.prepare(
-        'INSERT INTO fines (id, who_user_id, amount, reason, submitted_by_user_id, submitted_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
-      )
-        .bind(id, body.whoUserId, body.amount, body.reason.trim(), body.submittedByUserId, submittedAt, submittedAt)
-        .run();
-
-      return jsonResponse({ id, whoUserId: body.whoUserId, amount: body.amount, reason: body.reason.trim(), submittedByUserId: body.submittedByUserId, submittedAt }, 201, {
-        'Cache-Control': 'no-store',
-      });
-    }
 
     if (pathname === '/api/lineup' && method === 'GET') {
       const eventId = searchParams.get('eventId');
@@ -854,6 +851,17 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ id, eventId: body.eventId, userId: body.userId, status: body.status, updatedAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
+    if (pathname === '/api/availability/clear' && method === 'POST') {
+      const body = (await request.json()) as { eventId?: string; userId?: string };
+      if (!body.eventId || !body.userId) return errorResponse('eventId and userId are required');
+
+      await env.DB.prepare('DELETE FROM availability WHERE event_id = ?1 AND user_id = ?2')
+        .bind(body.eventId, body.userId)
+        .run();
+
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/users/upsert' && method === 'POST') {
       const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
       if (!body.name?.trim()) return errorResponse('name is required');
@@ -873,11 +881,13 @@ async function handleApi(request: Request, env: Env) {
         .bind(id, normalized, nickname, createdYear, createdAt)
         .run();
 
-      await env.DB.prepare(
-        "INSERT INTO availability (id, event_id, user_id, status, updated_at, created_at) SELECT ?1 || '-' || events.id, events.id, ?2, 'not_available', ?3, ?4 FROM events WHERE NOT EXISTS (SELECT 1 FROM availability WHERE availability.event_id = events.id AND availability.user_id = ?2)",
-      )
-        .bind(id, id, nowIso(), createdAt)
-        .run();
+      const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
+      if (!existingRosterEntry) {
+        const maxOrder = await env.DB.prepare('SELECT COALESCE(MAX(roster_order), -1) AS max_order FROM ref_roster').first<{ max_order: number }>();
+        await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order, created_at) VALUES (?1, ?2, ?3, ?4)')
+          .bind(createId('refslot'), id, Number(maxOrder?.max_order ?? -1) + 1, nowIso())
+          .run();
+      }
 
       return jsonResponse({ id, name: normalized, nickname, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
