@@ -8,7 +8,7 @@ const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
 export function ChatPage() {
-  const { data, addMessage, getDisplayName, saveNickname } = useAppState();
+  const { data, addMessage, getDisplayName, saveNickname, canWrite } = useAppState();
   const store = data!;
   const [text, setText] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -56,6 +56,7 @@ export function ChatPage() {
                     type="button"
                     className="name-btn"
                     onClick={() => {
+                      if (!canWrite) return;
                       setEditingUserId(message.userId);
                       setNickname(getDisplayName(message.userId));
                     }}
@@ -71,12 +72,16 @@ export function ChatPage() {
         ))}
         <div ref={bottomRef} />
       </div>
+      {canWrite ? (
       <form className="chat-input" onSubmit={onSubmit}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Send to team chat" />
         <button type="submit">Send</button>
       </form>
+      ) : (
+      <p className="muted">Visitor mode: chat is view-only.</p>
+      )}
 
-      {editingUserId && (
+      {canWrite && editingUserId && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <form
             className="card modal"
