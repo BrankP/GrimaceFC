@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useAppState } from '../App';
-import { getMonthLabel } from '../utils/date';
+import { formatDayAndMonth, formatDayOfMonth, formatLocalTime, getBrowserTimeZone, getMonthLabel } from '../utils/date';
 
 const getEventIndicator = (eventType: string, homeAway: string | null | undefined) => {
   if (eventType === 'Sesh') return { dot: '🟣', label: 'Sesh' };
@@ -28,14 +28,17 @@ export function UpcomingGamesPage() {
   );
 
   const toggleExpanded = (eventId: string) => setExpandedId((current) => (current === eventId ? null : eventId));
-  const formatEventTime = (isoDate: string, eventType: string) =>
-    eventType === 'Sesh' ? 'All day' : new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
+  const formatEventTime = (isoDate: string, eventType: string) => (eventType === 'Sesh' ? 'All day' : formatLocalTime(isoDate));
+  const userTimeZone = getBrowserTimeZone();
+
+  const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
 
   const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
 
   return (
     <section>
       <h2>Upcoming Games & Sessions</h2>
+      <p className="muted">Times shown in your local timezone ({userTimeZone}).</p>
       {Object.entries(grouped).map(([month, events]) => (
         <div key={month} className="month-group sleek-list-wrap">
           <h3>{month}</h3>
@@ -45,10 +48,12 @@ export function UpcomingGamesPage() {
               const lineup = store.lineups.find((candidate) => candidate.eventId === event.id);
               const beerDutyUserId = lineup?.beerDutyUserId ?? event.beerDutyUserId;
               const refDutyUserId = lineup?.refDutyUserId ?? event.refDutyUserId;
+              const pendingRefUserId = event.pendingRefUserId ?? null;
               const indicator = getEventIndicator(event.eventType, event.homeAway);
               const isExpanded = expandedId === event.id;
+              const currentlyResponsibleRefUserId = refDutyUserId ?? (event.homeAway === 'Away' ? pendingRefUserId : null);
               const loggedInUserHasDuty = Boolean(
-                currentUser && (beerDutyUserId === currentUser.id || refDutyUserId === currentUser.id),
+                currentUser && (beerDutyUserId === currentUser.id || currentlyResponsibleRefUserId === currentUser.id),
               );
               const statusIcon = loggedInUserHasDuty ? '⚠️' : indicator.dot;
               const attendees = store.users.filter((user) => getAvailability(event.id, user.id) === 'available');
@@ -60,8 +65,8 @@ export function UpcomingGamesPage() {
                 <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
                   <div className="sleek-event-header" onClick={() => toggleExpanded(event.id)} role="button" tabIndex={0} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggleExpanded(event.id) : null)}>
                   <div className="sleek-event-date">
-                    <strong>{new Date(event.date).getDate()}</strong>
-                    <small>{new Intl.DateTimeFormat('en-US', { month: 'short', weekday: 'short' }).format(new Date(event.date))}</small>
+                    <strong>{formatDayOfMonth(event.date)}</strong>
+                    <small>{formatDayAndMonth(event.date)}</small>
                     <p className="sleek-event-date-type">
                       <span className="sleek-dot" aria-hidden="true">{statusIcon}</span>
                       <span>{indicator.label}</span>
@@ -111,7 +116,13 @@ export function UpcomingGamesPage() {
                           </div>
                           <div className="sleek-duty-card">
                             <p className="sleek-duty-label">Ref Duty</p>
-                            <p className="sleek-duty-value">{refDutyUserId ? getUserName(refDutyUserId) : event.homeAway === 'Away' ? 'Pending' : 'N/A'}</p>
+                            <p className="sleek-duty-value">
+                              {refDutyUserId
+                                ? getUserName(refDutyUserId)
+                                : event.homeAway === 'Away'
+                                  ? (pendingRefUserId ? `Pending - ${getUserName(pendingRefUserId)}` : 'Pending')
+                                  : 'N/A'}
+                            </p>
                           </div>
                         </div>
                       )}

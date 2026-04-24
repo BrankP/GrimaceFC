@@ -126,7 +126,7 @@ const requireAdminPasscode = (request: Request, env: Env) => {
 };
 
 const cacheHeadersFor = (pathname: string) => {
-  if (pathname === '/api/events' || pathname === '/api/next-game') return { 'Cache-Control': 'public, max-age=60' };
+  if (pathname === '/api/events' || pathname === '/api/next-game') return { 'Cache-Control': 'no-store' };
   if (pathname === '/api/next-ref' || pathname === '/api/next-ref/history') return { 'Cache-Control': 'no-store' };
   if (pathname === '/api/messages') {
     return { 'Cache-Control': 'public, max-age=20' };
@@ -640,7 +640,26 @@ async function handleApi(request: Request, env: Env) {
     if (pathname === '/api/events' && method === 'GET') {
       await maybePostAttendanceReminders(env);
       const { results } = await env.DB.prepare(
-        'SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events ORDER BY date ASC LIMIT 50',
+        `SELECT
+          events.id,
+          events.event_type,
+          events.date,
+          events.day_of_week,
+          events.home_away,
+          events.beer_duty_user_id,
+          events.ref_duty_user_id,
+          events.location,
+          events.map_address,
+          events.opponent,
+          events.occasion,
+          events.team_name,
+          events.is_next_up,
+          CASE WHEN next_ref_state.status = 'Pending Decision' THEN ref_roster.user_id ELSE NULL END AS pending_ref_user_id
+        FROM events
+        LEFT JOIN next_ref_state ON next_ref_state.event_id = events.id
+        LEFT JOIN ref_roster ON ref_roster.id = next_ref_state.current_ref_slot_id
+        ORDER BY events.date ASC
+        LIMIT 50`,
       ).all();
 
       return jsonResponse(
@@ -652,6 +671,7 @@ async function handleApi(request: Request, env: Env) {
           homeAway: row.home_away,
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
+          pendingRefUserId: row.pending_ref_user_id,
           location: row.location,
           mapAddress: row.map_address,
           opponent: row.opponent,
@@ -666,7 +686,27 @@ async function handleApi(request: Request, env: Env) {
 
     if (pathname === '/api/next-game' && method === 'GET') {
       const row = await env.DB.prepare(
-        "SELECT id, event_type, date, day_of_week, home_away, beer_duty_user_id, ref_duty_user_id, location, map_address, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' ORDER BY date ASC LIMIT 1",
+        `SELECT
+          events.id,
+          events.event_type,
+          events.date,
+          events.day_of_week,
+          events.home_away,
+          events.beer_duty_user_id,
+          events.ref_duty_user_id,
+          events.location,
+          events.map_address,
+          events.opponent,
+          events.occasion,
+          events.team_name,
+          events.is_next_up,
+          CASE WHEN next_ref_state.status = 'Pending Decision' THEN ref_roster.user_id ELSE NULL END AS pending_ref_user_id
+        FROM events
+        LEFT JOIN next_ref_state ON next_ref_state.event_id = events.id
+        LEFT JOIN ref_roster ON ref_roster.id = next_ref_state.current_ref_slot_id
+        WHERE events.event_type = 'Game'
+        ORDER BY events.date ASC
+        LIMIT 1`,
       ).first();
       if (!row) return jsonResponse(null, 200, cacheHeadersFor(pathname));
       return jsonResponse(
@@ -678,6 +718,7 @@ async function handleApi(request: Request, env: Env) {
           homeAway: row.home_away,
           beerDutyUserId: row.beer_duty_user_id,
           refDutyUserId: row.ref_duty_user_id,
+          pendingRefUserId: row.pending_ref_user_id,
           location: row.location,
           mapAddress: row.map_address,
           opponent: row.opponent,

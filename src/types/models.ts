@@ -17,6 +17,7 @@ export interface TeamEvent {
   homeAway?: 'Home' | 'Away' | null;
   beerDutyUserId?: string | null;
   refDutyUserId?: string | null;
+  pendingRefUserId?: string | null;
   location: string;
   mapAddress?: string | null;
   opponent?: string | null;

@@ -14,6 +14,7 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../App';
 import { FORMATION_433, POSITION_LAYOUT } from '../constants/formation';
 import type { Lineup } from '../types/models';
+import { formatLocalDate, getBrowserTimeZone } from '../utils/date';
 
 type DropTarget = `position:${string}` | 'subs' | 'notAvailable' | 'unknowns';
 type DragDimension = 'primary';
@@ -236,7 +237,7 @@ export function NextGamePage() {
   return (
     <section>
       <h2>Next Game Lineup</h2>
-      <p>{nextGame.opponent} • {new Date(nextGame.date).toLocaleDateString()}</p>
+      <p>{nextGame.opponent} • {formatLocalDate(nextGame.date)} ({userTimeZone})</p>
       {!canEditLineup && <p className="muted">View mode: lineup drag-and-drop is disabled.</p>}
       <DndContext onDragEnd={handleDrop} collisionDetection={closestCenter} sensors={sensors}>
         <div className="lineup-layout">
@@ -283,3 +284,4 @@ export function NextGamePage() {
     </section>
   );
 }
+  const userTimeZone = getBrowserTimeZone();

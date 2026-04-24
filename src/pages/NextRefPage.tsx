@@ -2,9 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { acceptNextRef, completeNextRef, getNextRef, getNextRefHistory, passNextRef } from '../services/dataService';
 import type { NextRefHistoryEntry, NextRefState } from '../types/models';
 import { useAppState } from '../App';
+import { formatLocalDateTime, getBrowserTimeZone } from '../utils/date';
 
-const formatDateTime = (isoDate: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
+const formatDateTime = (isoDate: string) => formatLocalDateTime(isoDate);
 
 export function NextRefPage() {
   const [state, setState] = useState<NextRefState | null>(null);
@@ -15,6 +15,7 @@ export function NextRefPage() {
   const [error, setError] = useState('');
   const { canWrite, canEditLineup, isVisitor } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
+  const userTimeZone = getBrowserTimeZone();
 
   const refresh = async () => {
     try {
@@ -97,7 +98,7 @@ export function NextRefPage() {
             <div>
               <p className="next-ref-subtitle">Next Away Game</p>
               <h3>{state.event.opponent ? `vs ${state.event.opponent}` : 'Away Match'}</h3>
-              <p>{formatDateTime(state.event.date)} • {state.event.location}</p>
+              <p>{formatDateTime(state.event.date)} ({userTimeZone}) • {state.event.location}</p>
             </div>
             <div>
               <p className="next-ref-subtitle">Current Referee</p>
