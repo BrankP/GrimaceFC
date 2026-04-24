@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS events (
   beer_duty_user_id TEXT,
   ref_duty_user_id TEXT,
   location TEXT NOT NULL,
+  map_address TEXT,
   opponent TEXT,
   occasion TEXT,
   team_name TEXT NOT NULL,
@@ -32,17 +33,6 @@ CREATE TABLE IF NOT EXISTS messages (
   FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
-CREATE TABLE IF NOT EXISTS fines (
-  id TEXT PRIMARY KEY,
-  who_user_id TEXT NOT NULL,
-  amount REAL NOT NULL,
-  reason TEXT NOT NULL,
-  submitted_by_user_id TEXT NOT NULL,
-  submitted_at TEXT NOT NULL DEFAULT (datetime('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY(who_user_id) REFERENCES users(id),
-  FOREIGN KEY(submitted_by_user_id) REFERENCES users(id)
-);
 
 CREATE TABLE IF NOT EXISTS lineups (
   id TEXT PRIMARY KEY,
@@ -73,7 +63,8 @@ CREATE TABLE IF NOT EXISTS availability (
 );
 
 CREATE TABLE IF NOT EXISTS ref_roster (
-  user_id TEXT PRIMARY KEY,
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
   roster_order INTEGER NOT NULL UNIQUE,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(user_id) REFERENCES users(id)
@@ -81,14 +72,14 @@ CREATE TABLE IF NOT EXISTS ref_roster (
 
 CREATE TABLE IF NOT EXISTS next_ref_state (
   event_id TEXT PRIMARY KEY,
-  current_user_id TEXT NOT NULL,
+  current_ref_slot_id TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('Pending Decision','Accepted')),
   running_balance INTEGER NOT NULL DEFAULT 0,
   accepted_at TEXT,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY(event_id) REFERENCES events(id),
-  FOREIGN KEY(current_user_id) REFERENCES users(id)
+  FOREIGN KEY(current_ref_slot_id) REFERENCES ref_roster(id)
 );
 
 CREATE TABLE IF NOT EXISTS next_ref_passes (
