@@ -59,8 +59,8 @@ const rateLimit = (request: Request) => {
 const isWriteMethod = (method: string) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
 
 const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | null => {
-  const adminPasscode = env.ADMIN_PASSCODE ?? env.TEAM_PASSCODE ?? 'nah';
-  const viewPasscode = env.VIEW_PASSCODE ?? 'yea';
+  const adminPasscode = env.ADMIN_PASSCODE ?? 'adminadmin';
+  const viewPasscode = env.VIEW_PASSCODE ?? env.TEAM_PASSCODE ?? 'upthegrimace';
   if (provided === adminPasscode) return 'admin';
   if (provided === viewPasscode) return 'view';
   return null;

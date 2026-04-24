@@ -8,13 +8,15 @@ import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
 import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
-import { readCurrentUserId, readTeamPasscode, writeCurrentUserId, writeTeamPasscode } from './utils/storage';
+import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
 
 type AppState = {
   data: DataStore | null;
   currentUser: User | null;
   canEditLineup: boolean;
-  upsertUserByName: (name: string, passcode: string) => Promise<void>;
+  canWrite: boolean;
+  isVisitor: boolean;
+  upsertUserByName: (payload: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
@@ -34,9 +36,12 @@ export const useAppState = () => {
 };
 
 export default function App() {
-  const ADMIN_PASSCODE = 'nah';
+  const ADMIN_PASSCODE = 'adminadmin';
+  const PLAYER_PASSCODE = 'upthegrimace';
+
   const [data, setData] = useState<DataStore | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(readCurrentUserId());
+  const [visitorSession, setVisitorSession] = useState(() => readVisitorSession());
   const [error, setError] = useState('');
   const [teamPasscode, setTeamPasscode] = useState(readTeamPasscode());
   const [passcodeInput, setPasscodeInput] = useState(readTeamPasscode());
@@ -95,18 +100,51 @@ export default function App() {
     }
   };
 
-  const currentUser = useMemo(() => data?.users.find((u) => u.id === currentUserId) ?? null, [data, currentUserId]);
-  const hasTeamPasscode = teamPasscode.trim().length > 0;
-  const canEditLineup = teamPasscode.trim() === ADMIN_PASSCODE;
+  const visitorUser = useMemo<User | null>(() => {
+    if (!visitorSession) return null;
+    return {
+      id: 'visitor-session',
+      name: `${visitorSession.firstName} ${visitorSession.lastName}`.trim(),
+      createdYear: new Date().getFullYear(),
+      createdAt: new Date().toISOString(),
+    };
+  }, [visitorSession]);
 
-  const upsertUserByName = async (name: string, passcode: string) => {
+  const currentUser = useMemo(() => {
+    if (visitorUser) return visitorUser;
+    return data?.users.find((u) => u.id === currentUserId) ?? null;
+  }, [data, currentUserId, visitorUser]);
+
+  const isVisitor = Boolean(visitorUser);
+  const canWrite = !isVisitor && teamPasscode.trim().length > 0;
+  const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
+
+  const upsertUserByName = async ({ firstName, lastName, passcode, isVisitor: visitorMode }: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => {
     try {
-      const trimmedPasscode = passcode.trim();
-      writeTeamPasscode(trimmedPasscode);
-      setTeamPasscode(trimmedPasscode);
-      setPasscodeInput(trimmedPasscode);
+      const fullName = `${firstName.trim()} ${lastName.trim()}`.replace(/\s+/g, ' ').trim();
 
-      const user = await upsertUser({ name, createdYear: new Date().getFullYear() });
+      if (visitorMode) {
+        writeVisitorSession({ firstName: firstName.trim(), lastName: lastName.trim() });
+        setVisitorSession({ firstName: firstName.trim(), lastName: lastName.trim() });
+        writeCurrentUserId('');
+        setCurrentUserId(null);
+        setError('');
+        navigate('/upcoming');
+        return;
+      }
+
+      if (![ADMIN_PASSCODE, PLAYER_PASSCODE].includes(passcode.trim())) {
+        setError('Invalid team passcode');
+        return;
+      }
+
+      writeVisitorSession(null);
+      setVisitorSession(null);
+      writeTeamPasscode(passcode.trim());
+      setTeamPasscode(passcode.trim());
+      setPasscodeInput(passcode.trim());
+
+      const user = await upsertUser({ name: fullName, createdYear: new Date().getFullYear() });
       writeCurrentUserId(user.id);
       setCurrentUserId(user.id);
       await refreshData(0, true);
@@ -119,14 +157,14 @@ export default function App() {
   };
 
   const addMessage = async (text: string) => {
-    if (!currentUserId) return;
+    if (!currentUserId || !canWrite) return;
     await withWriteGuard(async () => {
       await postMessage({ userId: currentUserId, text });
     });
   };
 
-
   const saveNickname = async (userId: string, nickname: string) => {
+    if (!canWrite) return;
     const user = data?.users.find((u) => u.id === userId);
     if (!user) return;
     await withWriteGuard(async () => {
@@ -135,13 +173,14 @@ export default function App() {
   };
 
   const setAvailability = async (eventId: string, userId: string, status: AvailabilityStatus) => {
+    if (!canWrite) return;
     await withWriteGuard(async () => {
       await postAvailability({ eventId, userId, status });
     });
   };
 
-
   const clearAvailabilityForUser = async (eventId: string, userId: string) => {
+    if (!canWrite) return;
     await withWriteGuard(async () => {
       await clearAvailability({ eventId, userId });
     });
@@ -151,6 +190,7 @@ export default function App() {
     data?.availability.find((a) => a.eventId === eventId && a.userId === userId)?.status ?? null;
 
   const saveLineup = async (lineup: Lineup) => {
+    if (!canWrite) return;
     await withWriteGuard(async () => {
       await postLineup({
         id: lineup.id,
@@ -176,8 +216,8 @@ export default function App() {
   };
 
   if (!data && !error) return <main className="loading">Loading team data…</main>;
-  if (data && (!currentUser || !hasTeamPasscode)) {
-    return <NameGate onSubmit={(name, passcode) => void upsertUserByName(name, passcode)} initialName={currentUser?.name ?? ''} serverError={error} />;
+  if (data && !currentUser) {
+    return <NameGate onSubmit={(payload) => void upsertUserByName(payload)} serverError={error} />;
   }
 
   return (
@@ -186,6 +226,8 @@ export default function App() {
         data,
         currentUser,
         canEditLineup,
+        canWrite,
+        isVisitor,
         upsertUserByName,
         addMessage,
         saveNickname,
@@ -201,10 +243,10 @@ export default function App() {
         <header className="app-header">
           <div>
             <h1>Grimace FC</h1>
-            <p>Social Team Hub</p>
+            <p>{isVisitor ? 'Visitor (view-only)' : 'Social Team Hub'}</p>
           </div>
           <div className="row">
-            <span className="badge header-chip">User: {currentUser ? getUserName(currentUser.id) : 'Guest'}</span>
+            <span className="badge header-chip">User: {currentUser ? currentUser.name : 'Guest'}</span>
           </div>
         </header>
 
@@ -213,7 +255,7 @@ export default function App() {
         {data && currentUser && (
           <main className="page-wrap">
             <Routes>
-              <Route path="/" element={<Navigate to="/chat" replace />} />
+              <Route path="/" element={<Navigate to={isVisitor ? '/upcoming' : '/chat'} replace />} />
               <Route path="/upcoming" element={<UpcomingGamesPage />} />
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/game" element={<NextGamePage />} />
@@ -222,7 +264,7 @@ export default function App() {
           </main>
         )}
 
-        {showPasscodeModal && (
+        {showPasscodeModal && !isVisitor && (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <form
               className="card modal"

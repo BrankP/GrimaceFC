@@ -9,7 +9,7 @@ const getEventIndicator = (eventType: string, homeAway: string | null | undefine
 };
 
 export function UpcomingGamesPage() {
-  const { data, currentUser, getAvailability, setAvailability, getUserName } = useAppState();
+  const { data, currentUser, getAvailability, setAvailability, getUserName, canWrite } = useAppState();
   const store = data!;
 
   const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
@@ -81,16 +81,18 @@ export function UpcomingGamesPage() {
                       <button
                         type="button"
                         className={`avail-pill ${status === 'available' ? 'active-yes' : ''}`}
-                        onClick={() => void setAvailability(event.id, currentUser!.id, 'available')}
+                        onClick={() => void (canWrite ? setAvailability(event.id, currentUser!.id, 'available') : Promise.resolve())}
                         aria-label="Mark available"
+                        disabled={!canWrite}
                       >
                         ✅
                       </button>
                       <button
                         type="button"
                         className={`avail-pill ${status === 'not_available' ? 'active-no' : ''}`}
-                        onClick={() => void setAvailability(event.id, currentUser!.id, 'not_available')}
+                        onClick={() => void (canWrite ? setAvailability(event.id, currentUser!.id, 'not_available') : Promise.resolve())}
                         aria-label="Mark not available"
+                        disabled={!canWrite}
                       >
                         ❌
                       </button>

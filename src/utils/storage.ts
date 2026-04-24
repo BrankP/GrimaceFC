@@ -32,3 +32,29 @@ export const makeExportBundle = (payload: unknown) => JSON.stringify(payload);
 
 // backwards compatibility for older components still importing this symbol
 export const readLocalChanges = () => ({ users: [], messages: [], nicknames: [], lineups: [], availability: [] });
+
+
+const VISITOR_SESSION_KEY = 'grimacefc.visitorSession';
+
+export type VisitorSession = {
+  firstName: string;
+  lastName: string;
+};
+
+export const readVisitorSession = (): VisitorSession | null => {
+  const raw = localStorage.getItem(VISITOR_SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as VisitorSession;
+  } catch {
+    return null;
+  }
+};
+
+export const writeVisitorSession = (session: VisitorSession | null) => {
+  if (!session) {
+    localStorage.removeItem(VISITOR_SESSION_KEY);
+    return;
+  }
+  localStorage.setItem(VISITOR_SESSION_KEY, JSON.stringify(session));
+};

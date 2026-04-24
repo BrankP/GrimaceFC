@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { acceptNextRef, completeNextRef, getNextRef, getNextRefHistory, passNextRef } from '../services/dataService';
 import type { NextRefHistoryEntry, NextRefState } from '../types/models';
+import { useAppState } from '../App';
 
 const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
@@ -12,6 +13,7 @@ export function NextRefPage() {
   const [isWorking, setWorking] = useState(false);
   const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
+  const { canWrite, isVisitor } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
 
   const refresh = async () => {
@@ -86,6 +88,7 @@ export function NextRefPage() {
     <section className="next-ref-page">
       <h2>Next Ref</h2>
       {error && <p className="error">{error}</p>}
+      {isVisitor && <p className="muted">Visitor mode: Next Ref actions are disabled.</p>}
 
       {state?.event ? (
         <article className="card next-ref-summary">
@@ -116,7 +119,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`next-ref-action-btn ${pendingAction === 'pass' ? 'is-pending' : ''}`}
-            disabled={isWorking || !state?.event || !state?.currentRefUserId}
+            disabled={!canWrite || isWorking || !state?.event || !state?.currentRefUserId}
             onClick={() => {
               if (!state?.event || !state.currentRefUserId) return;
               void runAction('pass', () => passNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
@@ -127,7 +130,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`next-ref-action-btn ${pendingAction === 'accept' ? 'is-pending' : ''}`}
-            disabled={isWorking || !state?.event || !state?.currentRefUserId}
+            disabled={!canWrite || isWorking || !state?.event || !state?.currentRefUserId}
             onClick={() => {
               if (!state?.event || !state.currentRefUserId) return;
               void runAction('accept', () => acceptNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
@@ -141,7 +144,7 @@ export function NextRefPage() {
           <button
             type="button"
             className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''}`}
-            disabled={!state?.event || isWorking}
+            disabled={!canWrite || !state?.event || isWorking}
             onClick={() => {
               if (!state?.event) return;
               void runAction('complete', () => completeNextRef({ eventId: state.event!.id }));
