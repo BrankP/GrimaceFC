@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS events (
   beer_duty_user_id TEXT,
   ref_duty_user_id TEXT,
   location TEXT NOT NULL,
+  map_address TEXT,
   opponent TEXT,
   occasion TEXT,
   team_name TEXT NOT NULL,
