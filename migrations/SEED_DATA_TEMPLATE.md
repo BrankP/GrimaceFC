@@ -26,24 +26,23 @@ Use this worksheet to provide fresh seed data. Fill in rows in each table sectio
 | usr-019 | Tom Jenkins |  | 2026 | 2026-01-01T00:00:00Z |
 | usr-020 | Zac Reyes |  | 2026 | 2026-01-01T00:00:00Z |
 
-## 2) `events`
 | id | event_type (`Game`/`Sesh`) | date (ISO) | day_of_week | home_away (`Home`/`Away`/null) | beer_duty_user_id | ref_duty_user_id | location | map_address | opponent | occasion | team_name | is_next_up (0/1) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---:|
-| evt-001 | Game | 2026-05-02T13:00:00Z | Saturday | Home |  |  | Brookvale | Millers Reserve | Brookvale | Game | Grimace FC | 1 |
-| evt-002 | Game | 2026-05-09T15:00:00Z | Saturday | Away |  |  | Saint Augustine’s | Passmore Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
-| evt-003 | Game | 2026-05-16T13:00:00Z | Saturday | Away |  |  | Manly Vale | David Thomas Reserve | Manly Vale | Game | Grimace FC | 0 |
-| evt-004 | Game | 2026-05-22T19:00:00Z | Friday | Home |  |  | Harbord | Millers Reserve | Harbord | Game | Grimace FC | 0 |
-| evt-005 | Game | 2026-05-30T15:00:00Z | Saturday | Away |  |  | Wakehurst | Lionel Watts Oval | Wakehurst | Game | Grimace FC | 0 |
-| evt-006 | Game | 2026-06-06T13:00:00Z | Saturday | Home |  |  | Curl Curl | Millers Reserve | Curl Curl | Game | Grimace FC | 0 |
-| evt-007 | Game | 2026-06-13T15:00:00Z | Saturday | Home |  |  | Collaroy Cromer | Millers Reserve | Collaroy Cromer | Game | Grimace FC | 0 |
-| evt-008 | Game | 2026-06-27T13:00:00Z | Saturday | Away |  |  | Curl Curl | Adam Street | Curl Curl | Game | Grimace FC | 0 |
-| evt-009 | Game | 2026-07-04T13:00:00Z | Saturday | Home |  |  | Allambie | Beacon Hill Reserve | Allambie | Game | Grimace FC | 0 |
-| evt-010 | Game | 2026-07-11T15:00:00Z | Saturday | Away |  |  | Brookvale | Grahams Reserve | Brookvale | Game | Grimace FC | 0 |
-| evt-011 | Game | 2026-07-18T15:00:00Z | Saturday | Home |  |  | Saint Augustine’s | Beacon Hill Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
-| evt-012 | Game | 2026-07-25T13:00:00Z | Saturday | Home |  |  | Manly Vale | Millers Reserve | Manly Vale | Game | Grimace FC | 0 |
-| evt-013 | Game | 2026-08-01T15:00:00Z | Saturday | Away |  |  | Harbord | Nolan Reserve | Harbord | Game | Grimace FC | 0 |
-| evt-014 | Game | 2026-08-08T15:00:00Z | Saturday | Home |  |  | Wakehurst | Millers Reserve | Wakehurst | Game | Grimace FC | 0 |
-| evt-015 | Game | 2026-08-15T13:00:00Z | Saturday | Away |  |  | Curl Curl | Adam Street | Curl Curl | Game | Grimace FC | 0 |
+| evt-001 | Game | 2026-05-02T13:00:00Z | Saturday | Home | usr-009 |  | Brookvale | Millers Reserve | Brookvale | Game | Grimace FC | 1 |
+| evt-002 | Game | 2026-05-09T15:00:00Z | Saturday | Away | usr-011 |  | Saint Augustine’s | Passmore Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
+| evt-003 | Game | 2026-05-16T13:00:00Z | Saturday | Away | usr-013 |  | Manly Vale | David Thomas Reserve | Manly Vale | Game | Grimace FC | 0 |
+| evt-004 | Game | 2026-05-22T19:00:00Z | Friday | Home | usr-012 |  | Harbord | Millers Reserve | Harbord | Game | Grimace FC | 0 |
+| evt-005 | Game | 2026-05-30T15:00:00Z | Saturday | Away | usr-014 |  | Wakehurst | Lionel Watts Oval | Wakehurst | Game | Grimace FC | 0 |
+| evt-006 | Game | 2026-06-06T13:00:00Z | Saturday | Home | usr-016 |  | Curl Curl | Millers Reserve | Curl Curl | Game | Grimace FC | 0 |
+| evt-007 | Game | 2026-06-13T15:00:00Z | Saturday | Home | usr-008 |  | Collaroy Cromer | Millers Reserve | Collaroy Cromer | Game | Grimace FC | 0 |
+| evt-008 | Game | 2026-06-27T13:00:00Z | Saturday | Away | usr-007 |  | Curl Curl | Adam Street | Curl Curl | Game | Grimace FC | 0 |
+| evt-009 | Game | 2026-07-04T13:00:00Z | Saturday | Home | usr-017 |  | Allambie | Beacon Hill Reserve | Allambie | Game | Grimace FC | 0 |
+| evt-010 | Game | 2026-07-11T15:00:00Z | Saturday | Away | usr-003 |  | Brookvale | Grahams Reserve | Brookvale | Game | Grimace FC | 0 |
+| evt-011 | Game | 2026-07-18T15:00:00Z | Saturday | Home | usr-001 |  | Saint Augustine’s | Beacon Hill Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
+| evt-012 | Game | 2026-07-25T13:00:00Z | Saturday | Home | usr-010 |  | Manly Vale | Millers Reserve | Manly Vale | Game | Grimace FC | 0 |
+| evt-013 | Game | 2026-08-01T15:00:00Z | Saturday | Away | usr-004 |  | Harbord | Nolan Reserve | Harbord | Game | Grimace FC | 0 |
+| evt-014 | Game | 2026-08-08T15:00:00Z | Saturday | Home | usr-019 |  | Wakehurst | Millers Reserve | Wakehurst | Game | Grimace FC | 0 |
+| evt-015 | Game | 2026-08-15T13:00:00Z | Saturday | Away | usr-005 |  | Curl Curl | Adam Street | Curl Curl | Game | Grimace FC | 0 |
 
 ## 3) `messages`
 | id | user_id | text | created_at (ISO) |
@@ -65,6 +64,46 @@ Use this worksheet to provide fresh seed data. Fill in rows in each table sectio
 ## 7) `ref_roster`
 | user_id | roster_order | created_at (ISO) |
 |---|---:|---|
+| usr-012 | 1 | 2026-01-01T00:00:00Z |
+| usr-011 | 2 | 2026-01-01T00:00:00Z |
+| usr-004 | 3 | 2026-01-01T00:00:00Z |
+| usr-015 | 4 | 2026-01-01T00:00:00Z |
+| usr-018 | 5 | 2026-01-01T00:00:00Z |
+| usr-006 | 6 | 2026-01-01T00:00:00Z |
+| usr-016 | 7 | 2026-01-01T00:00:00Z |
+| usr-013 | 8 | 2026-01-01T00:00:00Z |
+| usr-002 | 9 | 2026-01-01T00:00:00Z |
+| usr-007 | 10 | 2026-01-01T00:00:00Z |
+| usr-014 | 11 | 2026-01-01T00:00:00Z |
+| usr-003 | 12 | 2026-01-01T00:00:00Z |
+| usr-001 | 13 | 2026-01-01T00:00:00Z |
+| usr-005 | 14 | 2026-01-01T00:00:00Z |
+| usr-019 | 15 | 2026-01-01T00:00:00Z |
+| usr-017 | 16 | 2026-01-01T00:00:00Z |
+| usr-009 | 17 | 2026-01-01T00:00:00Z |
+| usr-020 | 18 | 2026-01-01T00:00:00Z |
+| usr-010 | 19 | 2026-01-01T00:00:00Z |
+| usr-008 | 20 | 2026-01-01T00:00:00Z |
+| usr-016 | 21 | 2026-01-01T00:00:00Z |
+| usr-001 | 22 | 2026-01-01T00:00:00Z |
+| usr-014 | 23 | 2026-01-01T00:00:00Z |
+| usr-005 | 24 | 2026-01-01T00:00:00Z |
+| usr-012 | 25 | 2026-01-01T00:00:00Z |
+| usr-015 | 26 | 2026-01-01T00:00:00Z |
+| usr-003 | 27 | 2026-01-01T00:00:00Z |
+| usr-002 | 28 | 2026-01-01T00:00:00Z |
+| usr-004 | 29 | 2026-01-01T00:00:00Z |
+| usr-006 | 30 | 2026-01-01T00:00:00Z |
+| usr-018 | 31 | 2026-01-01T00:00:00Z |
+| usr-011 | 32 | 2026-01-01T00:00:00Z |
+| usr-007 | 33 | 2026-01-01T00:00:00Z |
+| usr-013 | 34 | 2026-01-01T00:00:00Z |
+| usr-008 | 35 | 2026-01-01T00:00:00Z |
+| usr-017 | 36 | 2026-01-01T00:00:00Z |
+| usr-020 | 37 | 2026-01-01T00:00:00Z |
+| usr-010 | 38 | 2026-01-01T00:00:00Z |
+| usr-009 | 39 | 2026-01-01T00:00:00Z |
+| usr-019 | 40 | 2026-01-01T00:00:00Z |
 
 ## 8) `next_ref_state`
 | event_id | current_user_id | status (`Pending Decision`/`Accepted`) | running_balance | accepted_at (ISO or null) | updated_at (ISO) | created_at (ISO) |
