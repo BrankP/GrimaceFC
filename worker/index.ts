@@ -261,6 +261,29 @@ const ensureRefRosterIdColumn = async (env: Env) => {
   }
 };
 
+
+const ensureNextRefStateSlotColumn = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(next_ref_state)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (existingColumns.has('current_ref_slot_id')) return;
+
+  if (existingColumns.has('current_user_id')) {
+    await env.DB.prepare('ALTER TABLE next_ref_state ADD COLUMN current_ref_slot_id TEXT').run();
+
+    const rows = await env.DB.prepare('SELECT event_id, current_user_id FROM next_ref_state').all<{ event_id: string; current_user_id: string }>();
+    for (const row of rows.results) {
+      const slot = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 ORDER BY roster_order ASC LIMIT 1')
+        .bind(row.current_user_id)
+        .first<{ id: string }>();
+      if (!slot) continue;
+      await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1 WHERE event_id = ?2')
+        .bind(slot.id, row.event_id)
+        .run();
+    }
+  }
+};
+
 const ensureLineupDutyColumns = async (env: Env) => {
   const columnsResult = await env.DB.prepare('PRAGMA table_info(lineups)').all<{ name: string }>();
   const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
@@ -325,6 +348,7 @@ const ensureSchema = async (env: Env) => {
       await ensureEventDutyColumns(env);
       await ensureLineupDutyColumns(env);
       await ensureRefRosterIdColumn(env);
+      await ensureNextRefStateSlotColumn(env);
       await ensureDefaultDutyAssignments(env);
       await ensureRefRosterSeed(env);
       await ensureGrimaceUser(env);
