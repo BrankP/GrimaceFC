@@ -392,6 +392,15 @@ const getTopRosterUser = (env: Env) =>
     'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC LIMIT 1',
   ).first<{ id: string; user_id: string; name: string; roster_order: number }>();
 
+const resolveRosterSlotId = async (env: Env, maybeSlotIdOrUserId: string) => {
+  const byId = await env.DB.prepare('SELECT id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(maybeSlotIdOrUserId).first<{ id: string }>();
+  if (byId?.id) return byId.id;
+  const byUser = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 ORDER BY roster_order ASC LIMIT 1')
+    .bind(maybeSlotIdOrUserId)
+    .first<{ id: string }>();
+  return byUser?.id ?? null;
+};
+
 const getNextEligibleRosterUser = async (env: Env, eventId: string, currentRefSlotId: string) => {
   const rosterRows = await env.DB.prepare(
     'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC, ref_roster.created_at ASC',
@@ -416,7 +425,16 @@ const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
   const existing = await env.DB.prepare(
     'SELECT event_id, current_ref_slot_id, status, running_balance, accepted_at FROM next_ref_state WHERE event_id = ?1 LIMIT 1',
   ).bind(eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
-  if (existing) return existing;
+  if (existing) {
+    const normalizedSlotId = await resolveRosterSlotId(env, existing.current_ref_slot_id);
+    if (!normalizedSlotId) return null;
+    if (normalizedSlotId !== existing.current_ref_slot_id) {
+      await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
+        .bind(normalizedSlotId, nowIso(), existing.event_id)
+        .run();
+    }
+    return { ...existing, current_ref_slot_id: normalizedSlotId };
+  }
 
   const top = await getTopRosterUser(env);
   if (!top) return null;
@@ -424,7 +442,7 @@ const ensureNextRefStateForEvent = async (env: Env, eventId: string) => {
   await env.DB.prepare(
     'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
   )
-    .bind(eventId, top.user_id, 'Pending Decision', 0, null, createdAt, createdAt)
+    .bind(eventId, top.id, 'Pending Decision', 0, null, createdAt, createdAt)
     .run();
 
   return {
@@ -459,12 +477,19 @@ const finalizeNextRefCycle = async (
   ).bind(state.event_id).all<{ user_id: string; name: string; passed_at: string }>();
   const passed = passRows.results.map((row) => ({ userId: row.user_id, name: row.name, passedAt: row.passed_at }));
 
-  const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
+  const normalizedSlotId = await resolveRosterSlotId(env, state.current_ref_slot_id);
+  if (!normalizedSlotId) {
+    throw new Error('Admin repair required: next ref state points to an unknown roster slot.');
+  }
+  const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(normalizedSlotId).first<{ user_id: string }>();
+  if (!currentRefSlot?.user_id) {
+    throw new Error('Admin repair required: next ref state has no valid referee assignment.');
+  }
 
   await env.DB.prepare(
     'INSERT INTO next_ref_history (id, event_id, referee_user_id, final_balance, passed_json, accepted_at, completed_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
   )
-    .bind(createId('refhist'), state.event_id, currentRefSlot?.user_id ?? '', Number(state.running_balance), JSON.stringify(passed), state.accepted_at, nowIso())
+    .bind(createId('refhist'), state.event_id, currentRefSlot.user_id, Number(state.running_balance), JSON.stringify(passed), state.accepted_at, nowIso())
     .run();
 
   await env.DB.prepare('DELETE FROM next_ref_passes WHERE event_id = ?1').bind(state.event_id).run();
@@ -523,15 +548,6 @@ const buildNextRefPayload = async (env: Env) => {
   }
 
   const state = trackedState ?? (await ensureNextRefStateForEvent(env, nextAway.id));
-  if (state && state.status === 'Pending Decision') {
-    const eligible = await getNextEligibleRosterUser(env, nextAway.id, state.current_ref_slot_id);
-    if (eligible && eligible.id !== state.current_ref_slot_id) {
-      await env.DB.prepare('UPDATE next_ref_state SET current_ref_slot_id = ?1, updated_at = ?2 WHERE event_id = ?3')
-        .bind(eligible.id, nowIso(), nextAway.id)
-        .run();
-      state.current_ref_slot_id = eligible.id;
-    }
-  }
   const passRows = await env.DB.prepare(
     'SELECT next_ref_passes.user_id AS user_id, users.name AS name, next_ref_passes.passed_at AS passed_at FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC',
   ).bind(nextAway.id).all<{ user_id: string; name: string; passed_at: string }>();
@@ -736,6 +752,8 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/next-ref/complete' && method === 'POST') {
+      const adminError = requireAdminPasscode(request, env);
+      if (adminError) return adminError;
       const body = (await request.json()) as { eventId?: string };
       if (!body.eventId) return errorResponse('eventId is required');
       const state = await env.DB.prepare(
@@ -743,11 +761,32 @@ async function handleApi(request: Request, env: Env) {
       ).bind(body.eventId).first<{ event_id: string; current_ref_slot_id: string; status: 'Pending Decision' | 'Accepted'; running_balance: number; accepted_at: string | null }>();
       if (!state) return errorResponse('No active state for this event', 404);
       if (state.status !== 'Accepted') return errorResponse('Ref duty must be accepted before completing', 400);
-      const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string }>();
+      const normalizedSlotId = await resolveRosterSlotId(env, state.current_ref_slot_id);
+      if (!normalizedSlotId) return errorResponse('Admin repair required: unable to resolve current ref roster slot', 409);
+      const currentRefSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1').bind(normalizedSlotId).first<{ user_id: string }>();
+      if (!currentRefSlot?.user_id) return errorResponse('Admin repair required: unable to resolve referee user', 409);
       await env.DB.prepare('UPDATE events SET ref_duty_user_id = ?1 WHERE id = ?2')
-        .bind(currentRefSlot?.user_id ?? null, body.eventId)
+        .bind(currentRefSlot.user_id, body.eventId)
         .run();
-      await finalizeNextRefCycle(env, state);
+      await finalizeNextRefCycle(env, { ...state, current_ref_slot_id: normalizedSlotId });
+
+      const completedEvent = await env.DB.prepare("SELECT date FROM events WHERE id = ?1 LIMIT 1").bind(body.eventId).first<{ date: string }>();
+      const nextAway = completedEvent
+        ? await env.DB.prepare(
+          "SELECT id FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND ref_duty_user_id IS NULL AND datetime(date) > datetime(?1) ORDER BY date ASC LIMIT 1",
+        ).bind(completedEvent.date).first<{ id: string }>()
+        : null;
+      if (nextAway?.id) {
+        const nextEligible = await getNextEligibleRosterUser(env, nextAway.id, normalizedSlotId);
+        if (nextEligible?.id) {
+          const createdAt = nowIso();
+          await env.DB.prepare(
+            'INSERT INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+          )
+            .bind(nextAway.id, nextEligible.id, 'Pending Decision', 0, null, createdAt, createdAt)
+            .run();
+        }
+      }
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }
