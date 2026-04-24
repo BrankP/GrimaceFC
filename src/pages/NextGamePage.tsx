@@ -14,18 +14,17 @@ import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../App';
 import { FORMATION_433, POSITION_LAYOUT } from '../constants/formation';
 import type { Lineup } from '../types/models';
+import { formatLocalDate, getBrowserTimeZone } from '../utils/date';
 
-type PrimaryTarget = `position:${string}` | 'subs' | 'notAvailable';
-type DutyTarget = 'beerDuty' | 'refDuty';
-type DropTarget = PrimaryTarget | DutyTarget;
-type DragDimension = 'primary' | 'beerDuty' | 'refDuty';
+type DropTarget = `position:${string}` | 'subs' | 'notAvailable' | 'unknowns';
+type DragDimension = 'primary';
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
 const parseDragId = (dragId: string): { dimension: DragDimension; source: string; playerId: string } | null => {
   const [dimension, source, playerId] = dragId.split('|');
   if (!dimension || !source || !playerId) return null;
-  if (dimension !== 'primary' && dimension !== 'beerDuty' && dimension !== 'refDuty') return null;
+  if (dimension !== 'primary') return null;
   return { dimension, source, playerId };
 };
 
@@ -84,7 +83,7 @@ const removeFromPrimaryPlacement = (lineup: Lineup, playerId: string) => {
   lineup.notAvailable = lineup.notAvailable.filter((id) => id !== playerId);
 };
 
-const addToPrimaryPlacement = (lineup: Lineup, target: PrimaryTarget, playerId: string): { displacedUserId: string | null } => {
+const addToPrimaryPlacement = (lineup: Lineup, target: DropTarget, playerId: string): { displacedUserId: string | null } => {
   if (target.startsWith('position:')) {
     const pos = target.replace('position:', '');
     const displaced = lineup.positions[pos];
@@ -102,15 +101,14 @@ const addToPrimaryPlacement = (lineup: Lineup, target: PrimaryTarget, playerId: 
 
   if (target === 'notAvailable') {
     if (!lineup.notAvailable.includes(playerId)) lineup.notAvailable.push(playerId);
+    return { displacedUserId: null };
   }
+
   return { displacedUserId: null };
 };
 
-const isPrimaryTarget = (target: DropTarget): target is PrimaryTarget =>
-  target.startsWith('position:') || target === 'subs' || target === 'notAvailable';
-
 export function NextGamePage() {
-  const { data, saveLineup, getUserName, getAvailability, setAvailability, canEditLineup } = useAppState();
+  const { data, saveLineup, getUserName, getAvailability, setAvailability, clearAvailability, canEditLineup } = useAppState();
   const store = data!;
   const sensors = useSensors(
     useSensor(MouseSensor, {
@@ -125,7 +123,6 @@ export function NextGamePage() {
     () => [...store.events].filter((e) => e.eventType === 'Game').sort((a, b) => +new Date(a.date) - +new Date(b.date))[0],
     [store.events],
   );
-  const showRefDuty = nextGame?.homeAway === 'Away';
 
   const computedLineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
@@ -174,6 +171,8 @@ export function NextGamePage() {
   const lineup = draftLineup ?? computedLineup;
   if (!lineup || !nextGame) return <p>No upcoming game found.</p>;
 
+  const unknowns = store.users.filter((u) => getAvailability(nextGame.id, u.id) === null).map((u) => u.id);
+
   const handleDrop = ({ active, over }: DragEndEvent) => {
     if (!canEditLineup) return;
     if (!over) return;
@@ -191,42 +190,33 @@ export function NextGamePage() {
       updatedAt: new Date().toISOString(),
     };
 
-    let draggedPrimaryStatus: 'available' | 'not_available' | null = null;
+    let nextStatus: 'available' | 'not_available' | 'unknown' = 'unknown';
     let displacedUserId: string | null = null;
 
-    if (isPrimaryTarget(target)) {
-      const isFieldSwap =
-        parsed.dimension === 'primary' &&
-        parsed.source.startsWith('position:') &&
-        target.startsWith('position:') &&
-        Boolean(lineup.positions[target.replace('position:', '')]);
+    const isFieldSwap =
+      parsed.source.startsWith('position:') &&
+      target.startsWith('position:') &&
+      Boolean(lineup.positions[target.replace('position:', '')]);
 
-      if (isFieldSwap) {
-        const sourcePos = parsed.source.replace('position:', '');
-        const targetPos = target.replace('position:', '');
-        const targetPlayer = lineup.positions[targetPos] as string | null;
-        const sourcePlayer = lineup.positions[sourcePos] as string | null;
+    if (target === 'unknowns') {
+      removeFromPrimaryPlacement(next, parsed.playerId);
+      nextStatus = 'unknown';
+    } else if (isFieldSwap) {
+      const sourcePos = parsed.source.replace('position:', '');
+      const targetPos = target.replace('position:', '');
+      const targetPlayer = lineup.positions[targetPos] as string | null;
+      const sourcePlayer = lineup.positions[sourcePos] as string | null;
 
-        if (targetPlayer && sourcePlayer === parsed.playerId) {
-          next.positions[sourcePos] = targetPlayer;
-          next.positions[targetPos] = parsed.playerId;
-        }
-      } else {
-        removeFromPrimaryPlacement(next, parsed.playerId);
-        const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
-        displacedUserId = primaryResult.displacedUserId;
+      if (targetPlayer && sourcePlayer === parsed.playerId) {
+        next.positions[sourcePos] = targetPlayer;
+        next.positions[targetPos] = parsed.playerId;
       }
-      draggedPrimaryStatus = target === 'notAvailable' ? 'not_available' : 'available';
-    }
-
-    if (target === 'beerDuty') next.beerDutyUserId = parsed.playerId;
-    if (target === 'refDuty' && showRefDuty) next.refDutyUserId = parsed.playerId;
-
-    if (isPrimaryTarget(target) && parsed.dimension === 'beerDuty' && next.beerDutyUserId === parsed.playerId) {
-      next.beerDutyUserId = null;
-    }
-    if (isPrimaryTarget(target) && parsed.dimension === 'refDuty' && next.refDutyUserId === parsed.playerId) {
-      next.refDutyUserId = null;
+      nextStatus = 'available';
+    } else {
+      removeFromPrimaryPlacement(next, parsed.playerId);
+      const primaryResult = addToPrimaryPlacement(next, target, parsed.playerId);
+      displacedUserId = primaryResult.displacedUserId;
+      nextStatus = target === 'notAvailable' ? 'not_available' : 'available';
     }
 
     setDraftLineup(next);
@@ -234,7 +224,8 @@ export function NextGamePage() {
     void (async () => {
       try {
         const writes: Array<Promise<void>> = [saveLineup(next)];
-        if (draggedPrimaryStatus) writes.push(setAvailability(nextGame.id, parsed.playerId, draggedPrimaryStatus));
+        if (nextStatus === 'unknown') writes.push(clearAvailability(nextGame.id, parsed.playerId));
+        if (nextStatus === 'available' || nextStatus === 'not_available') writes.push(setAvailability(nextGame.id, parsed.playerId, nextStatus));
         if (displacedUserId) writes.push(setAvailability(nextGame.id, displacedUserId, 'available'));
         await Promise.all(writes);
       } finally {
@@ -246,7 +237,7 @@ export function NextGamePage() {
   return (
     <section>
       <h2>Next Game Lineup</h2>
-      <p>{nextGame.opponent} • {new Date(nextGame.date).toLocaleDateString()}</p>
+      <p>{nextGame.opponent} • {formatLocalDate(nextGame.date)} ({userTimeZone})</p>
       {!canEditLineup && <p className="muted">View mode: lineup drag-and-drop is disabled.</p>}
       <DndContext onDragEnd={handleDrop} collisionDetection={closestCenter} sensors={sensors}>
         <div className="lineup-layout">
@@ -263,28 +254,6 @@ export function NextGamePage() {
             ))}
           </div>
           <aside className="stack">
-            <DropSlot id="beerDuty" className="card" canDrop={canEditLineup}>
-              <h3>Beer Duty</h3>
-              <div className="chip-wrap">
-                {lineup.beerDutyUserId ? (
-                  <DraggablePlayer dragId={buildDragId('beerDuty', 'beerDuty', lineup.beerDutyUserId)} label={getUserName(lineup.beerDutyUserId)} canDrag={canEditLineup} />
-                ) : (
-                  <small>Unassigned</small>
-                )}
-              </div>
-            </DropSlot>
-            {showRefDuty && (
-              <DropSlot id="refDuty" className="card" canDrop={canEditLineup}>
-                <h3>Ref Duty</h3>
-                <div className="chip-wrap">
-                  {lineup.refDutyUserId ? (
-                    <DraggablePlayer dragId={buildDragId('refDuty', 'refDuty', lineup.refDutyUserId)} label={getUserName(lineup.refDutyUserId)} canDrag={canEditLineup} />
-                  ) : (
-                    <small>Unassigned</small>
-                  )}
-                </div>
-              </DropSlot>
-            )}
             <DropSlot id="subs" className="card" canDrop={canEditLineup}>
               <h3>Subs</h3>
               <div className="chip-wrap">
@@ -301,9 +270,18 @@ export function NextGamePage() {
                 ))}
               </div>
             </DropSlot>
+            <DropSlot id="unknowns" className="card" canDrop={canEditLineup}>
+              <h3>The Unknowns</h3>
+              <div className="chip-wrap">
+                {unknowns.map((id) => (
+                  <DraggablePlayer key={`unknown-${id}`} dragId={buildDragId('primary', 'unknowns', id)} label={getUserName(id)} canDrag={canEditLineup} />
+                ))}
+              </div>
+            </DropSlot>
           </aside>
         </div>
       </DndContext>
     </section>
   );
 }
+  const userTimeZone = getBrowserTimeZone();

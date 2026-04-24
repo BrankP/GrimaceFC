@@ -17,20 +17,13 @@ export interface TeamEvent {
   homeAway?: 'Home' | 'Away' | null;
   beerDutyUserId?: string | null;
   refDutyUserId?: string | null;
+  pendingRefUserId?: string | null;
   location: string;
+  mapAddress?: string | null;
   opponent?: string | null;
   occasion?: string | null;
   teamName: string;
   isNextUp?: boolean;
-}
-
-export interface Fine {
-  id: string;
-  whoUserId: string;
-  amount: number;
-  reason: string;
-  submittedByUserId: string;
-  submittedAt: string;
 }
 
 export interface Message {
@@ -63,7 +56,6 @@ export interface Availability {
 export interface DataStore {
   users: User[];
   events: TeamEvent[];
-  fines: Fine[];
   messages: Message[];
   lineups: Lineup[];
   availability: Availability[];
