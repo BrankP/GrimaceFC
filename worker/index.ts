@@ -675,10 +675,11 @@ async function handleApi(request: Request, env: Env) {
       const passers = await env.DB.prepare('SELECT users.name AS name FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC')
         .bind(body.eventId)
         .all<{ name: string }>();
+      const eventMeta = await env.DB.prepare('SELECT opponent FROM events WHERE id = ?1 LIMIT 1').bind(body.eventId).first<{ opponent: string | null }>();
       const passerNames = passers.results.map((row) => row.name);
       const messageText = passerNames.length
         ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
-        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. No peeps owe them $50.`;
+        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
 
       await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
         .bind(createId('msg'), 'grimace-bot', messageText, nowIso())

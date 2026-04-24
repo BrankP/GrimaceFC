@@ -1,3 +1,4 @@
+-- Seed data worksheet: see migrations/SEED_DATA_TEMPLATE.md
 INSERT OR REPLACE INTO users (id, name, nickname, created_year, created_at) VALUES
 ('usr-001', 'Alastair Cockerton', NULL, 2026, '2026-03-02T10:10:00Z'),
 ('usr-002', 'Cale Whiting', NULL, 2026, '2026-03-04T17:20:00Z'),
