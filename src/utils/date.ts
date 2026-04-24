@@ -1,10 +1,19 @@
+const parseDisplayDate = (isoDate: string) => {
+  // Event payloads currently store team-local kickoff times with a trailing `Z`.
+  // Stripping the suffix preserves the intended wall-clock time for display.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(isoDate)) {
+    return new Date(isoDate.slice(0, -1));
+  }
+  return new Date(isoDate);
+};
+
 export const getMonthLabel = (isoDate: string) =>
-  new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(new Date(isoDate));
+  new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }).format(parseDisplayDate(isoDate));
 
 export const getBrowserTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const formatInBrowserTimeZone = (isoDate: string, options: Intl.DateTimeFormatOptions) =>
-  new Intl.DateTimeFormat('en-US', { ...options, timeZone: getBrowserTimeZone() }).format(new Date(isoDate));
+  new Intl.DateTimeFormat('en-US', { ...options, timeZone: getBrowserTimeZone() }).format(parseDisplayDate(isoDate));
 
 export const formatLocalDateTime = (isoDate: string) =>
   formatInBrowserTimeZone(isoDate, { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
