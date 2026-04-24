@@ -66,6 +66,20 @@ const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | nul
   return null;
 };
 
+const insertSystemMessage = async (env: Env, text: string, fallbackUserId?: string) => {
+  await ensureGrimaceUser(env);
+  try {
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
+      .bind(createId('msg'), 'grimace-bot', text, nowIso())
+      .run();
+  } catch (err) {
+    if (!fallbackUserId) throw err;
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
+      .bind(createId('msg'), fallbackUserId, text, nowIso())
+      .run();
+  }
+};
+
 
 const maybePostAttendanceReminders = async (env: Env) => {
   const reminderDate = new Date().toISOString().slice(0, 10);
@@ -92,9 +106,7 @@ const maybePostAttendanceReminders = async (env: Env) => {
     const names = missing.results.map((row) => row.name).join(', ');
     const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days). ${marker}`;
 
-    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(createId('msg'), 'grimace-bot', text, nowIso())
-      .run();
+    await insertSystemMessage(env, text);
   }
 };
 
@@ -785,9 +797,7 @@ async function handleApi(request: Request, env: Env) {
         ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
         : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
 
-      await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-        .bind(createId('msg'), 'grimace-bot', messageText, nowIso())
-        .run();
+      await insertSystemMessage(env, messageText, body.userId);
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }
