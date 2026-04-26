@@ -380,6 +380,8 @@ const schemaStatements = [
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     nickname TEXT,
+    goals INTEGER NOT NULL DEFAULT 0,
+    assists INTEGER NOT NULL DEFAULT 0,
     created_year INTEGER NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`,
@@ -596,6 +598,18 @@ const ensureLineupDutyColumns = async (env: Env) => {
   }
 };
 
+const ensureUserStatsColumns = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('goals')) {
+    await env.DB.prepare('ALTER TABLE users ADD COLUMN goals INTEGER NOT NULL DEFAULT 0').run();
+  }
+  if (!existingColumns.has('assists')) {
+    await env.DB.prepare('ALTER TABLE users ADD COLUMN assists INTEGER NOT NULL DEFAULT 0').run();
+  }
+};
+
 const ensureDefaultDutyAssignments = async (env: Env) => {
   const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC LIMIT 50').bind(SYSTEM_USER_ID).all<{ id: string }>();
   const userIds = users.results.map((user) => String(user.id));
@@ -647,6 +661,7 @@ const ensureSchema = async (env: Env) => {
       }
       await ensureEventDutyColumns(env);
       await ensureLineupDutyColumns(env);
+      await ensureUserStatsColumns(env);
       await ensureRefRosterIdColumn(env);
       await ensureNextRefStateSlotColumn(env);
       await ensureDefaultDutyAssignments(env);
@@ -1214,9 +1229,41 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/users' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, name, nickname, created_year, created_at FROM users ORDER BY created_at ASC LIMIT 50').all();
+      const { results } = await env.DB.prepare(
+        `SELECT
+          users.id,
+          users.name,
+          users.nickname,
+          users.created_year,
+          users.created_at,
+          COALESCE(goal_totals.goal_count, 0) AS goals,
+          COALESCE(assist_totals.assist_count, 0) AS assists
+        FROM users
+        LEFT JOIN (
+          SELECT scorer_user_id AS user_id, COUNT(1) AS goal_count
+          FROM event_goal_details
+          WHERE scorer_user_id IS NOT NULL AND is_own_goal = 0
+          GROUP BY scorer_user_id
+        ) AS goal_totals ON goal_totals.user_id = users.id
+        LEFT JOIN (
+          SELECT assist_user_id AS user_id, COUNT(1) AS assist_count
+          FROM event_goal_details
+          WHERE assist_user_id IS NOT NULL
+          GROUP BY assist_user_id
+        ) AS assist_totals ON assist_totals.user_id = users.id
+        ORDER BY users.created_at ASC
+        LIMIT 50`,
+      ).all();
       return jsonResponse(
-        results.map((row) => ({ id: row.id, name: row.name, nickname: row.nickname, createdYear: row.created_year, createdAt: row.created_at })),
+        results.map((row) => ({
+          id: row.id,
+          name: row.name,
+          nickname: row.nickname,
+          goals: Number(row.goals ?? 0),
+          assists: Number(row.assists ?? 0),
+          createdYear: row.created_year,
+          createdAt: row.created_at,
+        })),
       );
     }
 
@@ -1490,18 +1537,20 @@ async function handleApi(request: Request, env: Env) {
       if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
-      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname FROM users WHERE lower(name) = lower(?1) LIMIT 1')
+      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists FROM users WHERE lower(name) = lower(?1) LIMIT 1')
         .bind(normalized)
         .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
       const createdAt = (byName?.created_at as string | undefined) ?? nowIso();
       const createdYear = Number(body.createdYear ?? byName?.created_year ?? new Date().getFullYear());
       const nickname = body.nickname ?? (byName?.nickname as string | null) ?? null;
+      const goals = Number(byName?.goals ?? 0);
+      const assists = Number(byName?.assists ?? 0);
 
       await env.DB.prepare(
-        'INSERT INTO users (id, name, nickname, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
+        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
       )
-        .bind(id, normalized, nickname, createdYear, createdAt)
+        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt)
         .run();
 
       const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
@@ -1512,7 +1561,7 @@ async function handleApi(request: Request, env: Env) {
           .run();
       }
 
-      return jsonResponse({ id, name: normalized, nickname, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
+      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
     }
 
     return errorResponse('Not found', 404);

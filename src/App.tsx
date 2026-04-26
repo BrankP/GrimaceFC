@@ -6,6 +6,7 @@ import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
+import { TeamStatsPage } from './pages/TeamStatsPage';
 import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, upsertUser } from './services/dataService';
 import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
@@ -385,6 +386,7 @@ export default function App() {
               <Route path="/chat" element={<ChatPage />} />
               <Route path="/game" element={<NextGamePage />} />
               <Route path="/next-ref" element={<NextRefPage />} />
+              <Route path="/team-stats" element={<TeamStatsPage />} />
             </Routes>
           </main>
         )}

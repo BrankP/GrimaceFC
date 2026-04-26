@@ -5,6 +5,8 @@ export interface User {
   id: string;
   name: string;
   nickname?: string | null;
+  goals?: number;
+  assists?: number;
   createdYear: number;
   createdAt: string;
 }
