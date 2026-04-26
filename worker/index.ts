@@ -1229,7 +1229,31 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/users' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, name, nickname, goals, assists, created_year, created_at FROM users ORDER BY created_at ASC LIMIT 50').all();
+      const { results } = await env.DB.prepare(
+        `SELECT
+          users.id,
+          users.name,
+          users.nickname,
+          users.created_year,
+          users.created_at,
+          COALESCE(goal_totals.goal_count, 0) AS goals,
+          COALESCE(assist_totals.assist_count, 0) AS assists
+        FROM users
+        LEFT JOIN (
+          SELECT scorer_user_id AS user_id, COUNT(1) AS goal_count
+          FROM event_goal_details
+          WHERE scorer_user_id IS NOT NULL AND is_own_goal = 0
+          GROUP BY scorer_user_id
+        ) AS goal_totals ON goal_totals.user_id = users.id
+        LEFT JOIN (
+          SELECT assist_user_id AS user_id, COUNT(1) AS assist_count
+          FROM event_goal_details
+          WHERE assist_user_id IS NOT NULL
+          GROUP BY assist_user_id
+        ) AS assist_totals ON assist_totals.user_id = users.id
+        ORDER BY users.created_at ASC
+        LIMIT 50`,
+      ).all();
       return jsonResponse(
         results.map((row) => ({
           id: row.id,

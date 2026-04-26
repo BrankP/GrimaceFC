@@ -106,10 +106,10 @@ button.secondary { background: #39245f; }
 input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px solid #6448b0; background: #1b0d33; color: var(--text); }
 .bottom-nav {
   position: fixed; bottom: 0; left: 0; right: 0;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: .35rem; background: #170b2d; padding: .45rem; border-top: 1px solid #3d2a66;
 }
-.nav-link { text-align: center; color: #d6cbf5; text-decoration: none; padding: .55rem .2rem; border-radius: 10px; font-size: .82rem; }
+.nav-link { display: block; width: 100%; text-align: center; color: #d6cbf5; text-decoration: none; padding: .55rem .2rem; border-radius: 10px; font-size: .82rem; }
 .nav-link.active { background: var(--accent-2); color: white; }
 .gate-wrap { min-height: 100vh; display: grid; place-items: center; padding: 1rem; }
 .gate-card { max-width: 420px; width: 100%; }
