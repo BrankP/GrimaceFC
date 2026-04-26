@@ -2,6 +2,8 @@ CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   nickname TEXT,
+  goals INTEGER NOT NULL DEFAULT 0,
+  assists INTEGER NOT NULL DEFAULT 0,
   created_year INTEGER NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
