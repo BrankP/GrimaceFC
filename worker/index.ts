@@ -452,6 +452,26 @@ const schemaStatements = [
     FOREIGN KEY(event_id) REFERENCES events(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS event_scores (
+    event_id TEXT PRIMARY KEY,
+    grimace_score INTEGER NOT NULL CHECK(grimace_score >= 0),
+    opponent_score INTEGER NOT NULL CHECK(opponent_score >= 0),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE
+  )`,
+  `CREATE TABLE IF NOT EXISTS event_goal_details (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    scorer_user_id TEXT,
+    assist_user_id TEXT,
+    is_own_goal INTEGER NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY(scorer_user_id) REFERENCES users(id),
+    FOREIGN KEY(assist_user_id) REFERENCES users(id)
+  )`,
   `CREATE TABLE IF NOT EXISTS ref_roster (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -494,6 +514,7 @@ const schemaStatements = [
   'CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)',
   'CREATE INDEX IF NOT EXISTS idx_push_queue_created_at ON push_notification_queue(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_event_goal_details_event_sort ON event_goal_details(event_id, sort_order, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_ref_roster_order ON ref_roster(roster_order)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_passes_event ON next_ref_passes(event_id, passed_at)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_history_completed ON next_ref_history(completed_at DESC)',
@@ -647,6 +668,22 @@ const lineupFromRow = (row: Record<string, unknown>) => ({
   refDutyUserId: row.ref_duty_user_id ? String(row.ref_duty_user_id) : null,
   updatedAt: String(row.updated_at),
 });
+
+const getGoalDetailsForEvent = async (env: Env, eventId: string) => {
+  const { results } = await env.DB.prepare(
+    'SELECT id, scorer_user_id, assist_user_id, is_own_goal, sort_order FROM event_goal_details WHERE event_id = ?1 ORDER BY sort_order ASC, created_at ASC',
+  )
+    .bind(eventId)
+    .all<{ id: string; scorer_user_id: string | null; assist_user_id: string | null; is_own_goal: number; sort_order: number }>();
+
+  return results.map((row) => ({
+    id: row.id,
+    scorerUserId: row.scorer_user_id,
+    assistUserId: row.assist_user_id,
+    isOwnGoal: Boolean(row.is_own_goal),
+    sortOrder: Number(row.sort_order ?? 0),
+  }));
+};
 
 type NextAwayEventRow = {
   id: string;
@@ -912,8 +949,12 @@ async function handleApi(request: Request, env: Env) {
           events.occasion,
           events.team_name,
           events.is_next_up,
+          event_scores.grimace_score,
+          event_scores.opponent_score,
+          event_scores.updated_at AS score_updated_at,
           CASE WHEN next_ref_state.status = 'Pending Decision' THEN ref_roster.user_id ELSE NULL END AS pending_ref_user_id
         FROM events
+        LEFT JOIN event_scores ON event_scores.event_id = events.id
         LEFT JOIN next_ref_state ON next_ref_state.event_id = events.id
         LEFT JOIN ref_roster ON ref_roster.id = next_ref_state.current_ref_slot_id
         ORDER BY events.date ASC
@@ -921,7 +962,7 @@ async function handleApi(request: Request, env: Env) {
       ).all();
 
       return jsonResponse(
-        results.map((row) => ({
+        await Promise.all(results.map(async (row) => ({
           id: row.id,
           eventType: row.event_type,
           date: row.date,
@@ -936,7 +977,16 @@ async function handleApi(request: Request, env: Env) {
           occasion: row.occasion,
           teamName: row.team_name,
           isNextUp: Boolean(row.is_next_up),
-        })),
+          score: row.grimace_score === null || row.opponent_score === null
+            ? null
+            : {
+                eventId: row.id,
+                grimaceScore: Number(row.grimace_score),
+                opponentScore: Number(row.opponent_score),
+                goalDetails: await getGoalDetailsForEvent(env, String(row.id)),
+                updatedAt: String(row.score_updated_at),
+              },
+        }))),
         200,
         cacheHeadersFor(pathname),
       );
@@ -958,8 +1008,12 @@ async function handleApi(request: Request, env: Env) {
           events.occasion,
           events.team_name,
           events.is_next_up,
+          event_scores.grimace_score,
+          event_scores.opponent_score,
+          event_scores.updated_at AS score_updated_at,
           CASE WHEN next_ref_state.status = 'Pending Decision' THEN ref_roster.user_id ELSE NULL END AS pending_ref_user_id
         FROM events
+        LEFT JOIN event_scores ON event_scores.event_id = events.id
         LEFT JOIN next_ref_state ON next_ref_state.event_id = events.id
         LEFT JOIN ref_roster ON ref_roster.id = next_ref_state.current_ref_slot_id
         WHERE events.event_type = 'Game'
@@ -983,6 +1037,15 @@ async function handleApi(request: Request, env: Env) {
           occasion: row.occasion,
           teamName: row.team_name,
           isNextUp: Boolean(row.is_next_up),
+          score: row.grimace_score === null || row.opponent_score === null
+            ? null
+            : {
+                eventId: row.id,
+                grimaceScore: Number(row.grimace_score),
+                opponentScore: Number(row.opponent_score),
+                goalDetails: await getGoalDetailsForEvent(env, String(row.id)),
+                updatedAt: String(row.score_updated_at),
+              },
         },
         200,
         cacheHeadersFor(pathname),
@@ -1309,6 +1372,76 @@ async function handleApi(request: Request, env: Env) {
           notAvailable: body.notAvailable,
           beerDutyUserId: body.beerDutyUserId ?? null,
           refDutyUserId: body.refDutyUserId ?? null,
+          updatedAt,
+        },
+        201,
+        { 'Cache-Control': 'no-store' },
+      );
+    }
+
+    if (pathname === '/api/event-score' && method === 'POST') {
+      const adminPasscodeError = requireAdminPasscode(request, env);
+      if (adminPasscodeError) return adminPasscodeError;
+
+      const body = (await request.json()) as {
+        eventId?: string;
+        grimaceScore?: number;
+        opponentScore?: number;
+        goalDetails?: Array<{ scorerUserId?: string | null; assistUserId?: string | null; isOwnGoal?: boolean }>;
+      };
+      if (!body.eventId || body.grimaceScore === undefined || body.opponentScore === undefined) {
+        return errorResponse('eventId, grimaceScore, opponentScore are required');
+      }
+
+      const event = await env.DB.prepare('SELECT id, event_type FROM events WHERE id = ?1 LIMIT 1')
+        .bind(body.eventId)
+        .first<{ id: string; event_type: 'Game' | 'Sesh' }>();
+      if (!event) return errorResponse('Event not found', 404);
+      if (event.event_type !== 'Game') return errorResponse('Scores can only be recorded for Game events', 400);
+
+      const grimaceScore = Number(body.grimaceScore);
+      const opponentScore = Number(body.opponentScore);
+      if (!Number.isInteger(grimaceScore) || grimaceScore < 0 || !Number.isInteger(opponentScore) || opponentScore < 0) {
+        return errorResponse('Scores must be whole numbers greater than or equal to 0');
+      }
+
+      const goalDetails = (body.goalDetails ?? []).filter((entry) => entry && (entry.scorerUserId || entry.assistUserId || entry.isOwnGoal));
+      for (const detail of goalDetails) {
+        const isOwnGoal = Boolean(detail.isOwnGoal);
+        const scorerUserId = detail.scorerUserId ?? null;
+        if (!isOwnGoal && !scorerUserId) {
+          return errorResponse('Scorer is required for non-own-goal rows');
+        }
+      }
+
+      const updatedAt = nowIso();
+      await env.DB.prepare(
+        `INSERT INTO event_scores (event_id, grimace_score, opponent_score, updated_at, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(event_id) DO UPDATE SET grimace_score=excluded.grimace_score, opponent_score=excluded.opponent_score, updated_at=excluded.updated_at`,
+      )
+        .bind(body.eventId, grimaceScore, opponentScore, updatedAt, updatedAt)
+        .run();
+
+      await env.DB.prepare('DELETE FROM event_goal_details WHERE event_id = ?1').bind(body.eventId).run();
+      for (let idx = 0; idx < goalDetails.length; idx += 1) {
+        const detail = goalDetails[idx];
+        const isOwnGoal = Boolean(detail.isOwnGoal);
+        const scorerUserId = isOwnGoal ? null : (detail.scorerUserId ?? null);
+        const assistUserId = detail.assistUserId ?? null;
+        await env.DB.prepare(
+          'INSERT INTO event_goal_details (id, event_id, scorer_user_id, assist_user_id, is_own_goal, sort_order, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)',
+        )
+          .bind(createId('goal'), body.eventId, scorerUserId, assistUserId, isOwnGoal ? 1 : 0, idx, updatedAt)
+          .run();
+      }
+
+      return jsonResponse(
+        {
+          eventId: body.eventId,
+          grimaceScore,
+          opponentScore,
+          goalDetails: await getGoalDetailsForEvent(env, body.eventId),
           updatedAt,
         },
         201,

@@ -6,7 +6,7 @@ import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
-import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
+import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, upsertUser } from './services/dataService';
 import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
@@ -15,12 +15,19 @@ type AppState = {
   data: DataStore | null;
   currentUser: User | null;
   canEditLineup: boolean;
+  canEditScores: boolean;
   canWrite: boolean;
   isVisitor: boolean;
   upsertUserByName: (payload: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
+  saveEventScore: (payload: {
+    eventId: string;
+    grimaceScore: number;
+    opponentScore: number;
+    goalDetails: Array<{ scorerUserId: string | null; assistUserId: string | null; isOwnGoal: boolean }>;
+  }) => Promise<void>;
   setAvailability: (eventId: string, userId: string, status: AvailabilityStatus) => Promise<void>;
   clearAvailability: (eventId: string, userId: string) => Promise<void>;
   getAvailability: (eventId: string, userId: string) => AvailabilityStatus | null;
@@ -122,6 +129,7 @@ export default function App() {
   const isVisitor = Boolean(visitorUser);
   const canWrite = !isVisitor && teamPasscode.trim().length > 0;
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
+  const canEditScores = canEditLineup;
   const shouldPromptPush = !isVisitor && Boolean(currentUserId) && pushStatus !== 'enabled' && pushStatus !== 'unsupported';
 
   const setPushFailure = (reason: PushSyncFailureReason, detail?: string) => {
@@ -292,6 +300,18 @@ export default function App() {
     });
   };
 
+  const saveEventScore = async (payload: {
+    eventId: string;
+    grimaceScore: number;
+    opponentScore: number;
+    goalDetails: Array<{ scorerUserId: string | null; assistUserId: string | null; isOwnGoal: boolean }>;
+  }) => {
+    if (!canWrite) return;
+    await withWriteGuard(async () => {
+      await postEventScore(payload);
+    });
+  };
+
   const getDisplayName = (userId: string) => {
     const user = data?.users.find((u) => u.id === userId);
     return user?.nickname || user?.name || 'Unknown';
@@ -317,12 +337,14 @@ export default function App() {
         data,
         currentUser,
         canEditLineup,
+        canEditScores,
         canWrite,
         isVisitor,
         upsertUserByName,
         addMessage,
         saveNickname,
         saveLineup,
+        saveEventScore,
         setAvailability,
         clearAvailability: clearAvailabilityForUser,
         getAvailability,

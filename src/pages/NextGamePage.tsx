@@ -111,6 +111,7 @@ const addToPrimaryPlacement = (lineup: Lineup, target: DropTarget, playerId: str
 export function NextGamePage() {
   const { data, saveLineup, getUserName, getAvailability, setAvailability, clearAvailability, canEditLineup } = useAppState();
   const store = data!;
+  const userTimeZone = getBrowserTimeZone();
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: { distance: 4 },
@@ -283,7 +284,11 @@ export function NextGamePage() {
           </aside>
         </div>
       </DndContext>
+      <img
+        className="next-game-banner"
+        src={encodeURI('/ChatGPT Image Apr 17, 2026, 07_43_26 PM.png')}
+        alt="Grimace FC banner"
+      />
     </section>
   );
 }
-  const userTimeZone = getBrowserTimeZone();

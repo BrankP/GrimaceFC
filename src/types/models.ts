@@ -24,6 +24,23 @@ export interface TeamEvent {
   occasion?: string | null;
   teamName: string;
   isNextUp?: boolean;
+  score?: EventScore | null;
+}
+
+export interface EventGoalDetail {
+  id: string;
+  scorerUserId: string | null;
+  assistUserId: string | null;
+  isOwnGoal: boolean;
+  sortOrder: number;
+}
+
+export interface EventScore {
+  eventId: string;
+  grimaceScore: number;
+  opponentScore: number;
+  goalDetails: EventGoalDetail[];
+  updatedAt: string;
 }
 
 export interface Message {
