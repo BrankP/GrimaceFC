@@ -40,7 +40,7 @@ h1,h2,h3,p { margin: 0 0 .5rem; }
 
 .sleek-event-header {
   display: grid;
-  grid-template-columns: 72px 1fr auto;
+  grid-template-columns: 72px 1fr minmax(70px, auto) auto;
   gap: .65rem;
   align-items: start;
 }
@@ -53,6 +53,11 @@ h1,h2,h3,p { margin: 0 0 .5rem; }
 .sleek-event-date small { color: #c8bce8; text-transform: uppercase; font-size: .7rem; letter-spacing: .04em; }
 .sleek-event-date-type { display: flex; align-items: center; gap: .3rem; color: #c7bbe9; font-size: .8rem; margin: 0; }
 .sleek-event-main { display: grid; gap: .22rem; align-content: start; }
+.sleek-event-score { display: flex; align-items: center; justify-content: center; min-height: 34px; }
+.sleek-score { margin: 0; font-weight: 800; }
+.sleek-score-win { color: #38d981; }
+.sleek-score-loss { color: #ff6f8f; }
+.sleek-score-draw { color: var(--text); }
 .sleek-event-attendance { display: flex; justify-content: flex-end; align-items: flex-start; }
 .sleek-event-line { display: flex; align-items: center; gap: .4rem; margin: 0; font-size: .94rem; line-height: 1.3; }
 .sleek-event-line.muted { color: #c5b9e7; font-size: .86rem; }

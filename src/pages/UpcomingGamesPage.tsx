@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../App';
 import { formatDayAndMonth, formatDayOfMonth, formatLocalTime, getBrowserTimeZone, getMonthLabel } from '../utils/date';
+import type { EventGoalDetail, TeamEvent } from '../types/models';
 
 const SYSTEM_USER_ID = 'grimace-bot';
 
@@ -11,13 +12,20 @@ const getEventIndicator = (eventType: string, homeAway: string | null | undefine
 };
 
 export function UpcomingGamesPage() {
-  const { data, currentUser, getAvailability, setAvailability, getUserName, canWrite } = useAppState();
+  const { data, currentUser, getAvailability, setAvailability, getUserName, canWrite, canEditScores, saveEventScore } = useAppState();
   const store = data!;
 
   const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
   const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingEvent, setEditingEvent] = useState<TeamEvent | null>(null);
+  const [grimaceScore, setGrimaceScore] = useState('0');
+  const [opponentScore, setOpponentScore] = useState('0');
+  const [goalRows, setGoalRows] = useState<Array<{ id: string; scorerUserId: string; assistUserId: string }>>([]);
+  const [formError, setFormError] = useState('');
+  const longPressTimer = useRef<number | null>(null);
+  const suppressClickAfterLongPress = useRef<Record<string, boolean>>({});
 
   const grouped = useMemo(
     () =>
@@ -35,8 +43,38 @@ export function UpcomingGamesPage() {
   const userTimeZone = getBrowserTimeZone();
 
   const getMapEmbedUrl = (address: string) => `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed`;
+  const ownGoalValue = '__own_goal__';
+
+  const scoreSummary = (event: TeamEvent) => {
+    if (event.eventType !== 'Game' || !event.score) return null;
+    const { grimaceScore: gf, opponentScore: ga } = event.score;
+    const tone = gf > ga ? 'win' : gf < ga ? 'loss' : 'draw';
+    return { text: `${gf} - ${ga}`, tone };
+  };
+
+  const openScoreModal = (event: TeamEvent) => {
+    if (!canEditScores || event.eventType !== 'Game') return;
+    setEditingEvent(event);
+    setFormError('');
+    const currentScore = event.score;
+    setGrimaceScore(String(currentScore?.grimaceScore ?? 0));
+    setOpponentScore(String(currentScore?.opponentScore ?? 0));
+    const existingRows = (currentScore?.goalDetails ?? []).map((row: EventGoalDetail) => ({
+      id: row.id,
+      scorerUserId: row.isOwnGoal ? ownGoalValue : (row.scorerUserId ?? ''),
+      assistUserId: row.assistUserId ?? '',
+    }));
+    setGoalRows(existingRows.length ? existingRows : [{ id: crypto.randomUUID(), scorerUserId: '', assistUserId: '' }]);
+  };
+
+  const closeModal = () => setEditingEvent(null);
+
+  useEffect(() => () => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+  }, []);
 
   return (
+    <>
     <section>
       <h2>Upcoming Games & Sessions</h2>
       <p className="muted">Times shown in your local timezone ({userTimeZone}).</p>
@@ -64,7 +102,39 @@ export function UpcomingGamesPage() {
 
               return (
                 <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
-                  <div className="sleek-event-header" onClick={() => toggleExpanded(event.id)} role="button" tabIndex={0} onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggleExpanded(event.id) : null)}>
+                  <div
+                    className="sleek-event-header"
+                    onClick={() => {
+                      if (suppressClickAfterLongPress.current[event.id]) {
+                        suppressClickAfterLongPress.current[event.id] = false;
+                        return;
+                      }
+                      toggleExpanded(event.id);
+                    }}
+                    onDoubleClick={() => openScoreModal(event)}
+                    onTouchStart={() => {
+                      if (!canEditScores || event.eventType !== 'Game') return;
+                      longPressTimer.current = window.setTimeout(() => {
+                        suppressClickAfterLongPress.current[event.id] = true;
+                        openScoreModal(event);
+                      }, 450);
+                    }}
+                    onTouchEnd={() => {
+                      if (longPressTimer.current !== null) {
+                        window.clearTimeout(longPressTimer.current);
+                        longPressTimer.current = null;
+                      }
+                    }}
+                    onTouchMove={() => {
+                      if (longPressTimer.current !== null) {
+                        window.clearTimeout(longPressTimer.current);
+                        longPressTimer.current = null;
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ' ? toggleExpanded(event.id) : null)}
+                  >
                   <div className="sleek-event-date">
                     <strong>{formatDayOfMonth(event.date)}</strong>
                     <small>{formatDayAndMonth(event.date)}</small>
@@ -80,6 +150,13 @@ export function UpcomingGamesPage() {
                     </p>
 
                     <p className="sleek-event-line"><strong>{event.eventType === 'Game' ? `vs ${event.opponent}` : event.occasion}</strong></p>
+                  </div>
+                  <div className="sleek-event-score">
+                    {(() => {
+                      const result = scoreSummary(event);
+                      if (!result) return null;
+                      return <p className={`sleek-score sleek-score-${result.tone}`}>{result.text}</p>;
+                    })()}
                   </div>
 
                   <div className="sleek-event-attendance" onClick={(e) => e.stopPropagation()}>
@@ -163,5 +240,93 @@ export function UpcomingGamesPage() {
         </div>
       ))}
     </section>
+    {editingEvent && (
+      <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={closeModal}>
+        <form
+          className="card modal"
+          onClick={(e) => e.stopPropagation()}
+          onSubmit={(e) => {
+            e.preventDefault();
+            const gf = Number(grimaceScore);
+            const ga = Number(opponentScore);
+            if (!Number.isInteger(gf) || gf < 0 || !Number.isInteger(ga) || ga < 0) {
+              setFormError('Scores must be whole numbers greater than or equal to 0.');
+              return;
+            }
+
+            const mappedRows = goalRows
+              .filter((row) => row.scorerUserId || row.assistUserId)
+              .map((row) => ({
+                scorerUserId: row.scorerUserId === ownGoalValue ? null : (row.scorerUserId || null),
+                assistUserId: row.assistUserId || null,
+                isOwnGoal: row.scorerUserId === ownGoalValue,
+              }));
+
+            const hasInvalidScorer = mappedRows.some((row) => !row.isOwnGoal && !row.scorerUserId);
+            if (hasInvalidScorer) {
+              setFormError('Select a scorer for each non-own-goal row.');
+              return;
+            }
+
+            void saveEventScore({
+              eventId: editingEvent.id,
+              grimaceScore: gf,
+              opponentScore: ga,
+              goalDetails: mappedRows,
+            }).then(() => closeModal());
+          }}
+        >
+          <h3>{editingEvent.score ? 'Edit score' : 'Enter score'}</h3>
+          <p className="muted">{editingEvent.opponent ? `vs ${editingEvent.opponent}` : editingEvent.location}</p>
+          <label>
+            Grimace FC score
+            <input className="no-spinner" type="number" min={0} step={1} value={grimaceScore} onChange={(e) => setGrimaceScore(e.target.value)} required />
+          </label>
+          <label>
+            Opponent score
+            <input className="no-spinner" type="number" min={0} step={1} value={opponentScore} onChange={(e) => setOpponentScore(e.target.value)} required />
+          </label>
+          <div className="stack">
+            <p><strong>Goal scorer rows</strong></p>
+            {goalRows.map((row, idx) => (
+              <div key={row.id} className="row">
+                <select
+                  value={row.scorerUserId}
+                  onChange={(e) => setGoalRows((current) => current.map((candidate) => (candidate.id === row.id ? { ...candidate, scorerUserId: e.target.value } : candidate)))}
+                >
+                  <option value="">Scorer</option>
+                  <option value={ownGoalValue}>Own Goal</option>
+                  {playerUsers.map((user) => (
+                    <option key={user.id} value={user.id}>{getUserName(user.id)}</option>
+                  ))}
+                </select>
+                <select
+                  value={row.assistUserId}
+                  onChange={(e) => setGoalRows((current) => current.map((candidate) => (candidate.id === row.id ? { ...candidate, assistUserId: e.target.value } : candidate)))}
+                >
+                  <option value="">Assist (optional)</option>
+                  {playerUsers.map((user) => (
+                    <option key={user.id} value={user.id}>{getUserName(user.id)}</option>
+                  ))}
+                </select>
+                <button type="button" className="secondary" onClick={() => setGoalRows((current) => (current.length > 1 ? current.filter((candidate) => candidate.id !== row.id) : current))}>
+                  Remove
+                </button>
+                <span className="muted">#{idx + 1}</span>
+              </div>
+            ))}
+            <button type="button" className="secondary" onClick={() => setGoalRows((current) => [...current, { id: crypto.randomUUID(), scorerUserId: '', assistUserId: '' }])}>
+              + Add goal row
+            </button>
+          </div>
+          {formError ? <p className="error">{formError}</p> : null}
+          <div className="row">
+            <button type="submit">Save score</button>
+            <button type="button" className="secondary" onClick={closeModal}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    )}
+    </>
   );
 }
