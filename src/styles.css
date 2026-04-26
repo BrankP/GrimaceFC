@@ -106,7 +106,7 @@ button.secondary { background: #39245f; }
 input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px solid #6448b0; background: #1b0d33; color: var(--text); }
 .bottom-nav {
   position: fixed; bottom: 0; left: 0; right: 0;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   gap: .35rem; background: #170b2d; padding: .45rem; border-top: 1px solid #3d2a66;
 }
 .nav-link { text-align: center; color: #d6cbf5; text-decoration: none; padding: .55rem .2rem; border-radius: 10px; font-size: .82rem; }
@@ -184,6 +184,79 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .next-ref-roster-item.is-current { background: #4c2ea0; border: 1px solid #9b80f8; font-weight: 700; }
 .next-ref-roster-scroll { max-height: 55vh; overflow: auto; }
 .next-ref-history-item { padding: .55rem .65rem; border-radius: 10px; background: #2a1b47; }
+.team-stats-page { display: grid; gap: .7rem; }
+.team-summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; }
+.team-summary-card {
+  border: 1px solid #6d52b7;
+  background: linear-gradient(180deg, #2a1751, #24103f);
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: .18rem;
+}
+.team-summary-icon { font-size: 1.15rem; margin: 0; }
+.team-summary-value { font-size: 1.8rem; font-weight: 800; margin: 0; line-height: 1.1; }
+.team-summary-label { font-size: .78rem; color: #cdc1ec; text-transform: uppercase; letter-spacing: .05em; margin: 0; }
+.team-stats-card { border: 1px solid #5b458f; }
+.team-stats-card-header { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.team-rank-list { display: grid; gap: .45rem; margin-top: .5rem; }
+.team-rank-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: .55rem;
+  background: #2a1b47;
+  border: 1px solid #483072;
+  border-radius: 11px;
+  padding: .46rem .54rem;
+}
+.team-rank-badge {
+  font-size: .77rem;
+  border-radius: 999px;
+  border: 1px solid #7d63c6;
+  background: #3a2262;
+  color: #efe9ff;
+  padding: .2rem .48rem;
+  min-width: 40px;
+  text-align: center;
+}
+.team-rank-badge.is-gold { background: #7f6221; border-color: #f0c76e; color: #fff4d8; }
+.team-rank-badge.is-silver { background: #566176; border-color: #dce1ed; color: #f2f4f8; }
+.team-rank-badge.is-bronze { background: #6d472d; border-color: #f4b68c; color: #ffe6d8; }
+.team-initials-circle {
+  width: 33px;
+  height: 33px;
+  border-radius: 999px;
+  border: 1px solid #8f75da;
+  background: #38225d;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: .78rem;
+}
+.team-player-name { margin: 0; font-size: .96rem; }
+.team-player-stat { margin: 0; font-weight: 800; font-size: 1.16rem; }
+.team-top-contributor {
+  border: 1px solid #8168d8;
+  background: radial-gradient(circle at top right, rgba(153,120,255,.35), rgba(39,21,75,.96));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .65rem;
+}
+.team-contributor-label { margin: 0; color: #dfd3ff; text-transform: uppercase; font-size: .74rem; letter-spacing: .06em; }
+.team-contribution-total {
+  min-width: 62px;
+  min-height: 62px;
+  border-radius: 12px;
+  background: #4f2fa4;
+  border: 1px solid #9d83f7;
+  display: grid;
+  place-items: center;
+  font-size: 1.7rem;
+  font-weight: 800;
+}
 .lineup-layout { display: grid; gap: .7rem; }
 .next-game-banner {
   display: block;
