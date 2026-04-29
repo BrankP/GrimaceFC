@@ -84,7 +84,7 @@ function RankedList({
 }
 
 export function TeamStatsPage() {
-  const { data } = useAppState();
+  const { data, currentUser } = useAppState();
 
   const players = useMemo<RankedPlayer[]>(
     () =>
@@ -123,6 +123,13 @@ export function TeamStatsPage() {
 
   const hasAnyStats = totals.totalGoalContributions > 0;
 
+
+  const myContributions = useMemo(() => {
+    if (!currentUser) return 0;
+    const me = players.find((player) => player.id === currentUser.id);
+    return me ? me.goals + me.assists : 0;
+  }, [players, currentUser]);
+
   const topContributor = useMemo(() => {
     if (!hasAnyStats) return null;
     return [...players].sort((a, b) => b.goalContributions - a.goalContributions || b.goals - a.goals || a.name.localeCompare(b.name))[0] ?? null;
@@ -136,17 +143,17 @@ export function TeamStatsPage() {
         <article className="card team-summary-card">
           <p className="team-summary-icon" aria-hidden="true">⚽</p>
           <p className="team-summary-value">{totals.totalGoals}</p>
-          <p className="team-summary-label">Total Goals</p>
+          <p className="team-summary-label">Goal Count</p>
         </article>
         <article className="card team-summary-card">
           <p className="team-summary-icon" aria-hidden="true">🎯</p>
           <p className="team-summary-value">{totals.totalAssists}</p>
-          <p className="team-summary-label">Total Assists</p>
+          <p className="team-summary-label">Assist Count</p>
         </article>
         <article className="card team-summary-card">
           <p className="team-summary-icon" aria-hidden="true">✨</p>
-          <p className="team-summary-value">{totals.totalGoalContributions}</p>
-          <p className="team-summary-label">Goal Contributions</p>
+          <p className="team-summary-value">{myContributions}</p>
+          <p className="team-summary-label">My Contributions</p>
         </article>
       </div>
 

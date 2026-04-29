@@ -140,9 +140,6 @@ export function NextRefPage() {
           >
             {pendingAction === 'accept' ? 'Accepting…' : 'Accept Duty'}
           </button>
-        </div>
-
-        <div className="row">
           <button
             type="button"
             className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''}`}
