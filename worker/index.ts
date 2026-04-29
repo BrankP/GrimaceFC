@@ -152,7 +152,7 @@ const cacheHeadersFor = (pathname: string) => {
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
-const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)+)/g;
+const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)*)/g;
 
 const parseTaggedFullNames = (text: string) => {
   const matches = text.matchAll(TAG_PATTERN);
