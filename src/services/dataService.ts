@@ -43,6 +43,14 @@ export const upsertUser = (payload: { id?: string; name: string; nickname?: stri
 export const postMessage = (payload: { userId: string; text: string }) =>
   api<Message>('/messages', { method: 'POST', body: JSON.stringify(payload) });
 
+export const getVapidPublicKey = () => api<{ publicKey: string | null }>('/push/vapid-public-key');
+
+export const savePushSubscription = (payload: { userId: string; subscription: PushSubscriptionJSON }) =>
+  api<{ ok: true }>('/push/subscription', { method: 'POST', body: JSON.stringify(payload) });
+
+export const deletePushSubscription = (payload: { userId: string; endpoint: string }) =>
+  api<{ ok: true }>('/push/subscription', { method: 'DELETE', body: JSON.stringify(payload) });
+
 
 export const postLineup = (payload: Omit<Lineup, 'id' | 'updatedAt'> & { id?: string }) =>
   api<Lineup>('/lineup', { method: 'POST', body: JSON.stringify(payload) });

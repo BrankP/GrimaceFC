@@ -40,6 +40,10 @@ Tables:
 - `GET /api/users`
 - `GET /api/messages`
 - `POST /api/messages`
+- `GET /api/push/vapid-public-key`
+- `GET /api/push/pending?endpoint=`
+- `POST /api/push/subscription`
+- `DELETE /api/push/subscription`
 - `GET /api/fines`
 - `POST /api/fines`
 - `GET /api/lineup?eventId=`
@@ -143,6 +147,58 @@ Use this value when prompted:
 ```text
 foleycanseeinthedark
 ```
+
+## Push notifications (tag-only)
+
+Push notifications are native Web Push (Service Worker + Push API) and only fire when a registered user is tagged in chat using `@Full Name`.
+
+### Required Worker secrets
+
+Set the following before deploying:
+
+```bash
+wrangler secret put VAPID_PUBLIC_KEY
+wrangler secret put VAPID_PRIVATE_KEY
+wrangler secret put VAPID_SUBJECT
+```
+
+- `VAPID_PUBLIC_KEY`: public VAPID key (base64url)
+- `VAPID_PRIVATE_KEY`: private VAPID key (base64url)
+- `VAPID_SUBJECT`: contact URI, e.g. `mailto:you@example.com`
+
+### Migration
+
+Apply migrations so `push_subscriptions` exists:
+
+```bash
+npm run db:migrate
+```
+
+### Debugging push delivery (Cloudflare Worker logs)
+
+Open a second terminal at the repo root and stream Worker logs:
+
+```bash
+wrangler tail
+```
+
+If you use a non-default Wrangler environment, include it explicitly:
+
+```bash
+wrangler tail --env production
+```
+
+Recommended mobile-first test flow:
+
+1. Terminal A: run your app/worker as normal.
+2. Terminal B: run `wrangler tail`.
+3. On mobile PWA (User A), tap **Enable notifications on this device**.
+4. On desktop (User B), send a chat tag like `@Brad Fox can you bring cones`.
+5. In logs, look for push-related errors:
+   - `push_send_failed`
+   - `push_notification_flow_failed`
+
+If no push arrives, copy the Worker log lines with status code/response text from `push_send_failed` and use those to troubleshoot subscription/VAPID issues.
 
 ### Rate limit tradeoff
 

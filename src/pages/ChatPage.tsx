@@ -45,7 +45,7 @@ export function ChatPage() {
       Array.from(
         new Set(
           store.users
-            .map((user) => (user.nickname || user.name).trim())
+            .map((user) => user.name.trim())
             .filter((label) => Boolean(label)),
         ),
       ).sort((a, b) => b.length - a.length),
@@ -58,7 +58,7 @@ export function ChatPage() {
     if (!query) return [];
 
     return store.users
-      .map((user) => ({ id: user.id, label: (user.nickname || user.name).trim() }))
+      .map((user) => ({ id: user.id, label: user.name.trim() }))
       .filter((user) => user.label.toLowerCase().startsWith(query))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [mentionQuery, mentionStart, store.users]);
@@ -66,7 +66,7 @@ export function ChatPage() {
   const renderTaggedText = (value: string): ReactNode => {
     if (!mentionLabels.length) return value;
     const escaped = mentionLabels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const matcher = new RegExp(`(^|[^\\w])(${escaped.join('|')})(?=$|[^\\w])`, 'gi');
+    const matcher = new RegExp(`(^|[^\\w])(@(?:${escaped.join('|')}))(?=$|[^\\w])`, 'gi');
     const nodes: ReactNode[] = [];
     let lastIndex = 0;
     let match = matcher.exec(value);
@@ -94,14 +94,14 @@ export function ChatPage() {
     if (mentionStart === null) return;
     const input = inputRef.current;
     const caret = input?.selectionStart ?? text.length;
-    const nextText = `${text.slice(0, mentionStart)}${label} ${text.slice(caret)}`;
+    const nextText = `${text.slice(0, mentionStart)}@${label} ${text.slice(caret)}`;
     setText(nextText);
     setMentionStart(null);
     setMentionQuery('');
     setActiveMentionIndex(0);
 
     requestAnimationFrame(() => {
-      const cursor = mentionStart + label.length + 1;
+      const cursor = mentionStart + label.length + 2;
       input?.setSelectionRange(cursor, cursor);
       input?.focus();
     });
