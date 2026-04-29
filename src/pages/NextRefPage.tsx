@@ -13,7 +13,7 @@ export function NextRefPage() {
   const [isWorking, setWorking] = useState(false);
   const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
   const [error, setError] = useState('');
-  const { canWrite, canEditLineup, isVisitor, refreshAppData } = useAppState();
+  const { canWrite, canEditLineup, isVisitor, currentUser, refreshAppData } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
   const userTimeZone = getBrowserTimeZone();
 
@@ -39,6 +39,19 @@ export function NextRefPage() {
   }, []);
 
   const isAccepted = state?.status === 'Accepted';
+
+  const canCurrentRefAct = Boolean(state?.currentRefUserId && currentUser?.id === state.currentRefUserId);
+  const canAdminOverride = canEditLineup;
+  const canHandlePendingDecision = canCurrentRefAct || canAdminOverride;
+  const canPass = canWrite && !isWorking && !isAccepted && !!state?.event && !!state?.currentRefUserId && canHandlePendingDecision;
+  const canAccept = canWrite && !isWorking && !isAccepted && !!state?.event && !!state?.currentRefUserId && canHandlePendingDecision;
+  const canComplete = canEditLineup && !!state?.event && !isWorking;
+
+  const confirmAction = (actionType: 'pass' | 'accept' | 'complete') => {
+    if (actionType === 'pass') return window.confirm('Are you sure you want to pass referee duty?');
+    if (actionType === 'accept') return window.confirm('Are you sure you want to accept referee duty?');
+    return window.confirm('Are you sure you want to complete this referee duty?');
+  };
 
   const currentPassNames = useMemo(
     () => Array.from(new Set(state?.passList.map((entry) => entry.name) ?? [])),
@@ -91,6 +104,9 @@ export function NextRefPage() {
       {error && <p className="error">{error}</p>}
       {isVisitor && <p className="muted">Visitor mode: Next Ref actions are disabled.</p>}
       {!isVisitor && !canEditLineup && <p className="muted">Only admins can complete duty or run override actions.</p>}
+      {!isVisitor && state?.currentRefUserId && !canHandlePendingDecision && (
+        <p className="muted">Only the currently assigned referee or an admin can accept/pass this duty.</p>
+      )}
 
       {state?.event ? (
         <article className="card next-ref-summary">
@@ -120,10 +136,10 @@ export function NextRefPage() {
         <div className="next-ref-action-grid">
           <button
             type="button"
-            className={`next-ref-action-btn ${pendingAction === 'pass' ? 'is-pending' : ''}`}
-            disabled={!canWrite || isWorking || isAccepted || !state?.event || !state?.currentRefUserId}
+            className={`next-ref-action-btn ${pendingAction === 'pass' ? 'is-pending' : ''} ${!canPass ? 'is-disabled' : ''}`}
+            disabled={!canPass}
             onClick={() => {
-              if (!state?.event || !state.currentRefUserId) return;
+              if (!state?.event || !state.currentRefUserId || !confirmAction('pass')) return;
               void runAction('pass', () => passNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
@@ -131,10 +147,10 @@ export function NextRefPage() {
           </button>
           <button
             type="button"
-            className={`next-ref-action-btn ${pendingAction === 'accept' ? 'is-pending' : ''}`}
-            disabled={!canWrite || isWorking || isAccepted || !state?.event || !state?.currentRefUserId}
+            className={`next-ref-action-btn ${pendingAction === 'accept' ? 'is-pending' : ''} ${!canAccept ? 'is-disabled' : ''}`}
+            disabled={!canAccept}
             onClick={() => {
-              if (!state?.event || !state.currentRefUserId) return;
+              if (!state?.event || !state.currentRefUserId || !confirmAction('accept')) return;
               void runAction('accept', () => acceptNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
@@ -142,10 +158,10 @@ export function NextRefPage() {
           </button>
           <button
             type="button"
-            className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''}`}
-            disabled={!canEditLineup || !state?.event || isWorking}
+            className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''} ${!canComplete ? 'is-disabled' : ''}`}
+            disabled={!canComplete}
             onClick={() => {
-              if (!state?.event) return;
+              if (!state?.event || !confirmAction('complete')) return;
               void runAction('complete', () => completeNextRef({ eventId: state.event!.id }));
             }}
           >
