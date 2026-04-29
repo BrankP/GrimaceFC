@@ -7,9 +7,9 @@ import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
 import { TeamStatsPage } from './pages/TeamStatsPage';
-import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, upsertUser } from './services/dataService';
-import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
-import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
+import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, saveNotificationPreference, upsertUser } from './services/dataService';
+import { canUsePushNotifications, disablePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
+import type { AvailabilityStatus, DataStore, Lineup, NotificationPreference, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
 
 type AppState = {
@@ -58,6 +58,10 @@ export default function App() {
   const [showPasscodeModal, setShowPasscodeModal] = useState(false);
   const [pushStatus, setPushStatus] = useState<'idle' | 'prompting' | 'enabled' | 'unsupported' | 'denied' | 'error'>('idle');
   const [pushErrorDetail, setPushErrorDetail] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [notificationPreference, setNotificationPreference] = useState<NotificationPreference>('all_chats');
+  const [savedNotificationPreference, setSavedNotificationPreference] = useState<NotificationPreference>('all_chats');
+  const [settingsStatus, setSettingsStatus] = useState('');
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
@@ -131,7 +135,6 @@ export default function App() {
   const canWrite = !isVisitor && teamPasscode.trim().length > 0;
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
   const canEditScores = canEditLineup;
-  const shouldPromptPush = !isVisitor && Boolean(currentUserId) && pushStatus !== 'enabled' && pushStatus !== 'unsupported';
 
   const setPushFailure = (reason: PushSyncFailureReason, detail?: string) => {
     if (reason === 'unsupported') {
@@ -177,29 +180,60 @@ export default function App() {
     setPushErrorDetail('');
   }, [currentUserId, isVisitor]);
 
-  const enablePush = async () => {
-    if (!currentUserId) return;
+  useEffect(() => {
+    if (!currentUser || isVisitor) return;
+    const pref = currentUser.notificationPreference ?? 'all_chats';
+    setNotificationPreference(pref);
+    setSavedNotificationPreference(pref);
+  }, [currentUser, isVisitor]);
+
+  const saveNotificationSettings = async () => {
+    if (!currentUserId || isVisitor) return;
+    setSettingsStatus('Saving...');
+
+    if (notificationPreference === 'disabled') {
+      try {
+        await saveNotificationPreference({ userId: currentUserId, preference: 'disabled' });
+        await disablePushNotifications(currentUserId);
+        await refreshData(0, true);
+        setSavedNotificationPreference('disabled');
+        setSettingsStatus('Saved ✓');
+      } catch (err) {
+        setSettingsStatus(err instanceof Error ? err.message : 'Failed to save settings.');
+      }
+      return;
+    }
+
     if (!canUsePushNotifications()) {
-      setPushStatus('unsupported');
-      setPushErrorDetail('');
+      setSettingsStatus('Push notifications are not supported on this device/browser.');
       return;
     }
-    setPushStatus('prompting');
-    setPushErrorDetail('');
-    const permission = Notification.permission === 'granted'
-      ? 'granted'
-      : await Notification.requestPermission();
+
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission === 'denied') {
+      setSettingsStatus('Notifications are blocked in your browser. Enable them in site settings to receive alerts.');
+      return;
+    }
     if (permission !== 'granted') {
-      setPushFailure(permission);
+      setSettingsStatus('Notification permission was not granted.');
       return;
     }
+
     const result = await syncPushSubscription(currentUserId);
-    if (result.ok) {
-      setPushStatus('enabled');
-      setPushErrorDetail('');
+    if (!result.ok) {
+      setPushFailure(result.reason, result.detail);
+      setSettingsStatus(pushStatusLabel);
       return;
     }
-    setPushFailure(result.reason, result.detail);
+
+    try {
+      await saveNotificationPreference({ userId: currentUserId, preference: notificationPreference });
+      await refreshData(0, true);
+      setSavedNotificationPreference(notificationPreference);
+      setSettingsStatus('Saved ✓');
+    } catch (err) {
+      setSettingsStatus(err instanceof Error ? err.message : 'Failed to save settings.');
+    }
   };
 
   const pushStatusLabel = (() => {
@@ -359,24 +393,12 @@ export default function App() {
             <p>{isVisitor ? 'Visitor (view-only)' : 'Social Team Hub'}</p>
           </div>
           <div className="row">
-            <span className="badge header-chip">User: {currentUser ? currentUser.name : 'Guest'}</span>
+            {!isVisitor && (
+              <button type="button" className="settings-btn" aria-label="Open notification settings" onClick={() => setShowSettings(true)}>⚙️</button>
+            )}
           </div>
         </header>
 
-        {shouldPromptPush && (
-          <div className="card" style={{ marginBottom: 12 }}>
-            <p style={{ margin: 0 }}>{pushStatusLabel}</p>
-            <div className="row" style={{ marginTop: 8 }}>
-              <button type="button" onClick={() => void enablePush()} disabled={pushStatus === 'prompting' || pushStatus === 'denied'}>
-                {pushStatus === 'prompting'
-                  ? 'Waiting for permission…'
-                  : Notification.permission === 'granted'
-                    ? 'Enable notifications on this device'
-                    : 'Enable notifications'}
-              </button>
-            </div>
-          </div>
-        )}
 
         {error && <p className="error">{error}</p>}
 
@@ -391,6 +413,47 @@ export default function App() {
               <Route path="/team-stats" element={<TeamStatsPage />} />
             </Routes>
           </main>
+        )}
+
+
+        {showSettings && !isVisitor && currentUser && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <div className="card modal">
+              <h3>⚙️ Settings</h3>
+              <p className="muted">{currentUser.name}</p>
+              <div className="stack">
+                <div>
+                  <p><strong>Chat Notifications</strong></p>
+                  <p className="muted">Choose when you want to be notified</p>
+                </div>
+                {([
+                  { value: 'all_chats', title: 'All messages', help: 'Get notified for every chat message' },
+                  { value: 'tagged_only', title: 'Mentions only', help: 'Only when someone tags you' },
+                  { value: 'disabled', title: 'Off', help: 'No notifications' },
+                ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`option-row ${notificationPreference === option.value ? 'active' : ''}`}
+                    onClick={() => {
+                      setNotificationPreference(option.value);
+                      setSettingsStatus('');
+                    }}
+                  >
+                    <span>
+                      <strong>{option.title}</strong>
+                      <small className="muted">{option.help}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <p className="muted" style={{ minHeight: 20 }}>{settingsStatus}</p>
+              <div className="row">
+                <button type="button" onClick={() => void saveNotificationSettings()} disabled={notificationPreference === savedNotificationPreference}>Save</button>
+                <button type="button" className="secondary" onClick={() => setShowSettings(false)}>Close</button>
+              </div>
+            </div>
+          </div>
         )}
 
         {showPasscodeModal && !isVisitor && (

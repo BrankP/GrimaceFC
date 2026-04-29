@@ -1,6 +1,8 @@
 export type EventType = 'Game' | 'Sesh';
 export type AvailabilityStatus = 'available' | 'not_available';
 
+export type NotificationPreference = 'all_chats' | 'tagged_only' | 'disabled';
+
 export interface User {
   id: string;
   name: string;
@@ -9,6 +11,7 @@ export interface User {
   assists?: number;
   createdYear: number;
   createdAt: string;
+  notificationPreference?: NotificationPreference;
 }
 
 export interface TeamEvent {
@@ -50,6 +53,7 @@ export interface Message {
   userId: string;
   text: string;
   createdAt: string;
+  notificationPreference?: NotificationPreference;
 }
 
 export interface Lineup {
