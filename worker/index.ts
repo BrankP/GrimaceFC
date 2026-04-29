@@ -1252,7 +1252,7 @@ async function handleApi(request: Request, env: Env) {
         .bind(body.eventId)
         .all<{ name: string }>();
       const eventMeta = await env.DB.prepare('SELECT opponent FROM events WHERE id = ?1 LIMIT 1').bind(body.eventId).first<{ opponent: string | null }>();
-      const passerNames = passers.results.map((row) => row.name);
+      const passerNames = passers.results.map((row) => `@${row.name}`);
       const messageText = passerNames.length
         ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
         : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
