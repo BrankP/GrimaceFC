@@ -152,7 +152,7 @@ const cacheHeadersFor = (pathname: string) => {
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
-const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)+)/g;
+const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)*)/g;
 
 const parseTaggedFullNames = (text: string) => {
   const matches = text.matchAll(TAG_PATTERN);
@@ -317,10 +317,21 @@ const sendPushPing = async (env: Env, endpoint: string) => {
 
 const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
   const vapid = getVapidConfig(env);
-  if (!vapid) return;
+  if (!vapid) {
+    console.error('push_flow_skipped_missing_vapid', { senderUserId: payload.senderUserId });
+    return;
+  }
 
   const taggedNames = parseTaggedFullNames(payload.messageText);
-  if (!taggedNames.length) return;
+  if (!taggedNames.length) {
+    if (payload.messageText.includes('@')) {
+      console.error('push_flow_no_valid_tags', {
+        senderUserId: payload.senderUserId,
+        messageText: payload.messageText.slice(0, 160),
+      });
+    }
+    return;
+  }
 
   const placeholders = taggedNames.map((_, idx) => `?${idx + 1}`).join(', ');
   const taggedUsers = await env.DB.prepare(
@@ -336,7 +347,14 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
         .filter((userId) => userId !== payload.senderUserId),
     ),
   );
-  if (!recipientIds.length) return;
+  if (!recipientIds.length) {
+    console.error('push_flow_no_recipients', {
+      senderUserId: payload.senderUserId,
+      taggedNames,
+      resolvedTaggedUsers: taggedUsers.results.map((user) => ({ id: user.id, name: user.name })),
+    });
+    return;
+  }
 
   const subPlaceholders = recipientIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const subscriptions = await env.DB.prepare(
@@ -345,7 +363,21 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     .bind(...recipientIds)
     .all<{ id: string; user_id: string; endpoint: string; p256dh_key: string; auth_key: string }>();
 
-  if (!subscriptions.results.length) return;
+  if (!subscriptions.results.length) {
+    console.error('push_flow_no_subscriptions', {
+      senderUserId: payload.senderUserId,
+      recipientIds,
+      taggedNames,
+    });
+    return;
+  }
+
+  console.error('push_flow_dispatch_start', {
+    senderUserId: payload.senderUserId,
+    taggedNames,
+    recipientIds,
+    subscriptionCount: subscriptions.results.length,
+  });
 
   const notificationPayload: PendingPushNotification = {
     title: 'Grimace FC: You were tagged in chat',
@@ -357,18 +389,26 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     try {
       await storePendingNotification(env, subscription.endpoint, notificationPayload);
       const pushResult = await sendPushPing(env, subscription.endpoint);
-      if (pushResult.ok) continue;
+      if (pushResult.ok) {
+        console.error('push_send_ok', {
+          userId: subscription.user_id,
+          endpoint: subscription.endpoint.slice(0, 80),
+        });
+        continue;
+      }
       if (pushResult.status === 404 || pushResult.status === 410) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
       }
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
+        userId: subscription.user_id,
         statusCode: pushResult.status,
         responseText: (pushResult.responseText ?? '').slice(0, 200),
       });
     } catch (err) {
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
+        userId: subscription.user_id,
         message: err instanceof Error ? err.message : String(err),
       });
     }
