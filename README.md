@@ -40,6 +40,10 @@ Tables:
 - `GET /api/users`
 - `GET /api/messages`
 - `POST /api/messages`
+- `GET /api/push/vapid-public-key`
+- `GET /api/push/pending?endpoint=`
+- `POST /api/push/subscription`
+- `DELETE /api/push/subscription`
 - `GET /api/fines`
 - `POST /api/fines`
 - `GET /api/lineup?eventId=`
@@ -142,6 +146,32 @@ Use this value when prompted:
 
 ```text
 foleycanseeinthedark
+```
+
+## Push notifications (tag-only)
+
+Push notifications are native Web Push (Service Worker + Push API) and only fire when a registered user is tagged in chat using `@Full Name`.
+
+### Required Worker secrets
+
+Set the following before deploying:
+
+```bash
+wrangler secret put VAPID_PUBLIC_KEY
+wrangler secret put VAPID_PRIVATE_KEY
+wrangler secret put VAPID_SUBJECT
+```
+
+- `VAPID_PUBLIC_KEY`: public VAPID key (base64url)
+- `VAPID_PRIVATE_KEY`: private VAPID key (base64url)
+- `VAPID_SUBJECT`: contact URI, e.g. `mailto:you@example.com`
+
+### Migration
+
+Apply migrations so `push_subscriptions` exists:
+
+```bash
+npm run db:migrate
 ```
 
 ### Rate limit tradeoff
