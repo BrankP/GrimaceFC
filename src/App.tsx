@@ -6,8 +6,7 @@ import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
-import { TeamStatsPage } from './pages/TeamStatsPage';
-import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, upsertUser } from './services/dataService';
+import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
 import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
@@ -130,7 +129,6 @@ export default function App() {
   const isVisitor = Boolean(visitorUser);
   const canWrite = !isVisitor && teamPasscode.trim().length > 0;
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
-  const canEditScores = !isVisitor && [ADMIN_PASSCODE, PLAYER_PASSCODE].includes(teamPasscode.trim());
   const shouldPromptPush = !isVisitor && Boolean(currentUserId) && pushStatus !== 'enabled' && pushStatus !== 'unsupported';
 
   const setPushFailure = (reason: PushSyncFailureReason, detail?: string) => {

@@ -174,6 +174,32 @@ Apply migrations so `push_subscriptions` exists:
 npm run db:migrate
 ```
 
+### Debugging push delivery (Cloudflare Worker logs)
+
+Open a second terminal at the repo root and stream Worker logs:
+
+```bash
+wrangler tail
+```
+
+If you use a non-default Wrangler environment, include it explicitly:
+
+```bash
+wrangler tail --env production
+```
+
+Recommended mobile-first test flow:
+
+1. Terminal A: run your app/worker as normal.
+2. Terminal B: run `wrangler tail`.
+3. On mobile PWA (User A), tap **Enable notifications on this device**.
+4. On desktop (User B), send a chat tag like `@Brad Fox can you bring cones`.
+5. In logs, look for push-related errors:
+   - `push_send_failed`
+   - `push_notification_flow_failed`
+
+If no push arrives, copy the Worker log lines with status code/response text from `push_send_failed` and use those to troubleshoot subscription/VAPID issues.
+
 ### Rate limit tradeoff
 
 Current IP rate limiting is isolate-local in memory. This is intentionally simple and lightweight, but not globally consistent across all Worker isolates/instances. The helper is structured to be swapped later for KV or Durable Objects when stronger global enforcement is needed.
