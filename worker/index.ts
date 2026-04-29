@@ -341,34 +341,37 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     return;
   }
 
-  const allUsers = await env.DB.prepare("SELECT id, name, notification_preference FROM users").all<{ id: string; name: string; notification_preference: 'all_chats' | 'tagged_only' | 'disabled' }>();
-  const taggedNames = parseTaggedNamesFromCandidates(payload.messageText, allUsers.results.map((user) => user.name));
-  if (!taggedNames.length) {
-    if (payload.messageText.includes('@')) {
+  const allChatRecipients = await env.DB.prepare(
+    "SELECT id FROM users WHERE id != ?1 AND notification_preference = 'all_chats'",
+  )
+    .bind(payload.senderUserId)
+    .all<{ id: string }>();
+  const allChatRecipientIds = allChatRecipients.results.map((user) => user.id);
+
+  let taggedNames: string[] = [];
+  let taggedOnlyRecipientIds: string[] = [];
+
+  if (payload.messageText.includes('@')) {
+    const taggedCandidates = await env.DB.prepare("SELECT id, name FROM users WHERE notification_preference = 'tagged_only'").all<{ id: string; name: string }>();
+    taggedNames = parseTaggedNamesFromCandidates(payload.messageText, taggedCandidates.results.map((user) => user.name));
+
+    if (taggedNames.length) {
+      taggedOnlyRecipientIds = taggedCandidates.results
+        .filter((user) => user.id !== payload.senderUserId && taggedNames.includes(normalizeMentionName(user.name)))
+        .map((user) => user.id);
+    } else {
       console.error('push_flow_no_valid_tags', {
         senderUserId: payload.senderUserId,
         messageText: payload.messageText.slice(0, 160),
       });
     }
-    return;
   }
 
-  const taggedUsers = allUsers.results.filter((user) => taggedNames.includes(normalizeMentionName(user.name)));
-
-  const allChatRecipientIds = allUsers.results
-    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'all_chats')
-    .map((user) => user.id);
-
-  const taggedRecipientIds = taggedUsers
-    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'tagged_only')
-    .map((user) => user.id);
-
-  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedRecipientIds]));
+  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedOnlyRecipientIds]));
   if (!recipientIds.length) {
     console.error('push_flow_no_recipients', {
       senderUserId: payload.senderUserId,
       taggedNames,
-      resolvedTaggedUsers: taggedUsers.map((user) => ({ id: user.id, name: user.name, preference: user.notification_preference })),
     });
     return;
   }
@@ -397,7 +400,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
   });
 
   const notificationPayload: PendingPushNotification = {
-    title: 'Grimace FC: You were tagged in chat',
+    title: 'Grimace FC: New chat message',
     body: payload.messageText,
     url: '/chat',
   };
@@ -683,7 +686,10 @@ const ensureUserNotificationPreferenceColumn = async (env: Env) => {
     await env.DB.prepare("ALTER TABLE users ADD COLUMN notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))").run();
   }
 
-  await env.DB.prepare("UPDATE users SET notification_preference = 'all_chats' WHERE notification_preference IS NULL OR notification_preference = ''").run();
+  const nullPreferenceCount = await env.DB.prepare("SELECT COUNT(1) AS count FROM users WHERE notification_preference IS NULL OR notification_preference = ''").first<{ count: number }>();
+  if (Number(nullPreferenceCount?.count ?? 0) > 0) {
+    await env.DB.prepare("UPDATE users SET notification_preference = 'all_chats' WHERE notification_preference IS NULL OR notification_preference = ''").run();
+  }
 };
 
 const ensureDefaultDutyAssignments = async (env: Env) => {
