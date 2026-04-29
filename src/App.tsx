@@ -394,7 +394,7 @@ export default function App() {
           </div>
           <div className="row">
             {!isVisitor && (
-              <button type="button" className="settings-btn" aria-label="Open notification settings" onClick={() => setShowSettings(true)}>⚙️</button>
+              <button type="button" className="settings-btn" aria-label="Open notification settings" onClick={() => setShowSettings(true)}><span aria-hidden="true">⚙️</span></button>
             )}
           </div>
         </header>
@@ -429,8 +429,7 @@ export default function App() {
                 {([
                   { value: 'all_chats', title: 'All messages', help: 'Get notified for every chat message' },
                   { value: 'tagged_only', title: 'Mentions only', help: 'Only when someone tags you' },
-                  { value: 'disabled', title: 'Off', help: 'No notifications' },
-                ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
+                                  ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
                   <button
                     key={option.value}
                     type="button"
