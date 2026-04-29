@@ -152,17 +152,26 @@ const cacheHeadersFor = (pathname: string) => {
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
-const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)+)/g;
 
-const parseTaggedFullNames = (text: string) => {
-  const matches = text.matchAll(TAG_PATTERN);
-  const unique = new Set<string>();
-  for (const match of matches) {
-    const tagged = (match[1] ?? '').trim();
-    if (!tagged) continue;
-    unique.add(normalizeMentionName(tagged));
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parseTaggedNamesFromCandidates = (text: string, candidateNames: string[]) => {
+  const normalizedCandidates = Array.from(
+    new Set(
+      candidateNames
+        .map((name) => normalizeMentionName(name))
+        .filter((name) => Boolean(name)),
+    ),
+  ).sort((a, b) => b.length - a.length);
+
+  if (!normalizedCandidates.length) return [];
+
+  const matched = new Set<string>();
+  for (const candidate of normalizedCandidates) {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9_])@${escapeRegExp(candidate)}(?=$|[^A-Za-z0-9_])`, 'i');
+    if (pattern.test(text)) matched.add(candidate);
   }
-  return Array.from(unique);
+  return Array.from(matched);
 };
 
 const getVapidConfig = (env: Env) => {
@@ -224,6 +233,8 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
     }
   }
 
+  if (offset + seqLen > der.length) throw new Error('Invalid DER signature length');
+
   if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
   offset += 1;
   const rLength = der[offset];
@@ -236,8 +247,11 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
   const sLength = der[offset];
   offset += 1;
   let s = der.slice(offset, offset + sLength);
+
   while (r.length > outputLength / 2 && r[0] === 0) r = r.slice(1);
   while (s.length > outputLength / 2 && s[0] === 0) s = s.slice(1);
+  if (r.length > outputLength / 2 || s.length > outputLength / 2) throw new Error('Invalid DER signature component size');
+
   const rPadded = new Uint8Array(outputLength / 2);
   const sPadded = new Uint8Array(outputLength / 2);
   rPadded.set(r, outputLength / 2 - r.length);
@@ -246,6 +260,11 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
   combined.set(rPadded, 0);
   combined.set(sPadded, outputLength / 2);
   return toBase64Url(combined);
+};
+
+const ecdsaSignatureToJose = (signature: Uint8Array, outputLength: number) => {
+  if (signature.length === outputLength) return toBase64Url(signature);
+  return derToJose(signature, outputLength);
 };
 
 const createVapidJwt = async (env: Env, endpoint: string) => {
@@ -281,7 +300,7 @@ const createVapidJwt = async (env: Env, endpoint: string) => {
       new TextEncoder().encode(data),
     ),
   );
-  const signatureJose = derToJose(signatureDer, 64);
+  const signatureJose = ecdsaSignatureToJose(signatureDer, 64);
   return `${data}.${signatureJose}`;
 };
 
@@ -317,26 +336,42 @@ const sendPushPing = async (env: Env, endpoint: string) => {
 
 const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
   const vapid = getVapidConfig(env);
-  if (!vapid) return;
+  if (!vapid) {
+    console.error('push_flow_skipped_missing_vapid', { senderUserId: payload.senderUserId });
+    return;
+  }
 
-  const taggedNames = parseTaggedFullNames(payload.messageText);
-  if (!taggedNames.length) return;
+  const allUsers = await env.DB.prepare("SELECT id, name, notification_preference FROM users").all<{ id: string; name: string; notification_preference: 'all_chats' | 'tagged_only' | 'disabled' }>();
+  const taggedNames = parseTaggedNamesFromCandidates(payload.messageText, allUsers.results.map((user) => user.name));
+  if (!taggedNames.length) {
+    if (payload.messageText.includes('@')) {
+      console.error('push_flow_no_valid_tags', {
+        senderUserId: payload.senderUserId,
+        messageText: payload.messageText.slice(0, 160),
+      });
+    }
+    return;
+  }
 
-  const placeholders = taggedNames.map((_, idx) => `?${idx + 1}`).join(', ');
-  const taggedUsers = await env.DB.prepare(
-    `SELECT id, name FROM users WHERE lower(trim(name)) IN (${placeholders})`,
-  )
-    .bind(...taggedNames)
-    .all<{ id: string; name: string }>();
+  const taggedUsers = allUsers.results.filter((user) => taggedNames.includes(normalizeMentionName(user.name)));
 
-  const recipientIds = Array.from(
-    new Set(
-      taggedUsers.results
-        .map((user) => user.id)
-        .filter((userId) => userId !== payload.senderUserId),
-    ),
-  );
-  if (!recipientIds.length) return;
+  const allChatRecipientIds = allUsers.results
+    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'all_chats')
+    .map((user) => user.id);
+
+  const taggedRecipientIds = taggedUsers
+    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'tagged_only')
+    .map((user) => user.id);
+
+  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedRecipientIds]));
+  if (!recipientIds.length) {
+    console.error('push_flow_no_recipients', {
+      senderUserId: payload.senderUserId,
+      taggedNames,
+      resolvedTaggedUsers: taggedUsers.map((user) => ({ id: user.id, name: user.name, preference: user.notification_preference })),
+    });
+    return;
+  }
 
   const subPlaceholders = recipientIds.map((_, idx) => `?${idx + 1}`).join(', ');
   const subscriptions = await env.DB.prepare(
@@ -345,7 +380,21 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     .bind(...recipientIds)
     .all<{ id: string; user_id: string; endpoint: string; p256dh_key: string; auth_key: string }>();
 
-  if (!subscriptions.results.length) return;
+  if (!subscriptions.results.length) {
+    console.error('push_flow_no_subscriptions', {
+      senderUserId: payload.senderUserId,
+      recipientIds,
+      taggedNames,
+    });
+    return;
+  }
+
+  console.error('push_flow_dispatch_start', {
+    senderUserId: payload.senderUserId,
+    taggedNames,
+    recipientIds,
+    subscriptionCount: subscriptions.results.length,
+  });
 
   const notificationPayload: PendingPushNotification = {
     title: 'Grimace FC: You were tagged in chat',
@@ -357,18 +406,31 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     try {
       await storePendingNotification(env, subscription.endpoint, notificationPayload);
       const pushResult = await sendPushPing(env, subscription.endpoint);
-      if (pushResult.ok) continue;
-      if (pushResult.status === 404 || pushResult.status === 410) {
+      if (pushResult.ok) {
+        console.error('push_send_ok', {
+          userId: subscription.user_id,
+          endpoint: subscription.endpoint.slice(0, 80),
+        });
+        continue;
+      }
+      const responseText = pushResult.responseText ?? '';
+      const shouldDelete =
+        pushResult.status === 404 ||
+        pushResult.status === 410 ||
+        (pushResult.status === 403 && responseText.toLowerCase().includes('do not correspond to the credentials used to create the subscriptions'));
+      if (shouldDelete) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
       }
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
+        userId: subscription.user_id,
         statusCode: pushResult.status,
-        responseText: (pushResult.responseText ?? '').slice(0, 200),
+        responseText: responseText.slice(0, 200),
       });
     } catch (err) {
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
+        userId: subscription.user_id,
         message: err instanceof Error ? err.message : String(err),
       });
     }
@@ -383,7 +445,8 @@ const schemaStatements = [
     goals INTEGER NOT NULL DEFAULT 0,
     assists INTEGER NOT NULL DEFAULT 0,
     created_year INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
   )`,
   `CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
@@ -426,7 +489,8 @@ const schemaStatements = [
     id TEXT PRIMARY KEY,
     endpoint TEXT NOT NULL UNIQUE,
     payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
   )`,
   `CREATE TABLE IF NOT EXISTS lineups (
     id TEXT PRIMARY KEY,
@@ -1236,6 +1300,7 @@ async function handleApi(request: Request, env: Env) {
           users.nickname,
           users.created_year,
           users.created_at,
+          users.notification_preference,
           COALESCE(goal_totals.goal_count, 0) AS goals,
           COALESCE(assist_totals.assist_count, 0) AS assists
         FROM users
@@ -1263,6 +1328,7 @@ async function handleApi(request: Request, env: Env) {
           assists: Number(row.assists ?? 0),
           createdYear: row.created_year,
           createdAt: row.created_at,
+          notificationPreference: row.notification_preference,
         })),
       );
     }
@@ -1532,12 +1598,26 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
     }
 
+
+    if (pathname === '/api/users/notification-preference' && method === 'POST') {
+      const body = (await request.json()) as { userId?: string; preference?: 'all_chats' | 'tagged_only' | 'disabled' };
+      if (!body.userId || !body.preference) return errorResponse('userId and preference are required');
+      if (!['all_chats', 'tagged_only', 'disabled'].includes(body.preference)) return errorResponse('Invalid notification preference');
+      const existingUser = await env.DB.prepare('SELECT id FROM users WHERE id = ?1 LIMIT 1').bind(body.userId).first<{ id: string }>();
+      if (!existingUser?.id) return errorResponse('Unknown userId', 404);
+      await env.DB.prepare('UPDATE users SET notification_preference = ?1 WHERE id = ?2').bind(body.preference, body.userId).run();
+      if (body.preference === 'disabled') {
+        await env.DB.prepare('DELETE FROM push_subscriptions WHERE user_id = ?1').bind(body.userId).run();
+      }
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/users/upsert' && method === 'POST') {
       const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
       if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
-      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists FROM users WHERE lower(name) = lower(?1) LIMIT 1')
+      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists, notification_preference FROM users WHERE lower(name) = lower(?1) LIMIT 1')
         .bind(normalized)
         .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
@@ -1546,11 +1626,12 @@ async function handleApi(request: Request, env: Env) {
       const nickname = body.nickname ?? (byName?.nickname as string | null) ?? null;
       const goals = Number(byName?.goals ?? 0);
       const assists = Number(byName?.assists ?? 0);
+      const notificationPreference = (byName?.notification_preference as string | undefined) ?? 'all_chats';
 
       await env.DB.prepare(
-        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
+        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at, notification_preference) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
       )
-        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt)
+        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference)
         .run();
 
       const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
@@ -1561,7 +1642,7 @@ async function handleApi(request: Request, env: Env) {
           .run();
       }
 
-      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
+      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference }, 201, { 'Cache-Control': 'no-store' });
     }
 
     return errorResponse('Not found', 404);
