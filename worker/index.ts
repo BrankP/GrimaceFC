@@ -406,14 +406,19 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
         });
         continue;
       }
-      if (pushResult.status === 404 || pushResult.status === 410) {
+      const responseText = pushResult.responseText ?? '';
+      const shouldDelete =
+        pushResult.status === 404 ||
+        pushResult.status === 410 ||
+        (pushResult.status === 403 && responseText.toLowerCase().includes('do not correspond to the credentials used to create the subscriptions'));
+      if (shouldDelete) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
       }
       console.error('push_send_failed', {
         endpoint: subscription.endpoint.slice(0, 80),
         userId: subscription.user_id,
         statusCode: pushResult.status,
-        responseText: (pushResult.responseText ?? '').slice(0, 200),
+        responseText: responseText.slice(0, 200),
       });
     } catch (err) {
       console.error('push_send_failed', {
