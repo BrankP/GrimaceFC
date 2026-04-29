@@ -341,7 +341,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     return;
   }
 
-  const allUsers = await env.DB.prepare('SELECT id, name FROM users').all<{ id: string; name: string }>();
+  const allUsers = await env.DB.prepare("SELECT id, name, notification_preference FROM users").all<{ id: string; name: string; notification_preference: 'all_chats' | 'tagged_only' | 'disabled' }>();
   const taggedNames = parseTaggedNamesFromCandidates(payload.messageText, allUsers.results.map((user) => user.name));
   if (!taggedNames.length) {
     if (payload.messageText.includes('@')) {
@@ -355,18 +355,20 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
 
   const taggedUsers = allUsers.results.filter((user) => taggedNames.includes(normalizeMentionName(user.name)));
 
-  const recipientIds = Array.from(
-    new Set(
-      taggedUsers
-        .map((user) => user.id)
-        .filter((userId) => userId !== payload.senderUserId),
-    ),
-  );
+  const allChatRecipientIds = allUsers.results
+    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'all_chats')
+    .map((user) => user.id);
+
+  const taggedRecipientIds = taggedUsers
+    .filter((user) => user.id !== payload.senderUserId && user.notification_preference === 'tagged_only')
+    .map((user) => user.id);
+
+  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedRecipientIds]));
   if (!recipientIds.length) {
     console.error('push_flow_no_recipients', {
       senderUserId: payload.senderUserId,
       taggedNames,
-      resolvedTaggedUsers: taggedUsers.map((user) => ({ id: user.id, name: user.name })),
+      resolvedTaggedUsers: taggedUsers.map((user) => ({ id: user.id, name: user.name, preference: user.notification_preference })),
     });
     return;
   }
@@ -443,7 +445,8 @@ const schemaStatements = [
     goals INTEGER NOT NULL DEFAULT 0,
     assists INTEGER NOT NULL DEFAULT 0,
     created_year INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
   )`,
   `CREATE TABLE IF NOT EXISTS events (
     id TEXT PRIMARY KEY,
@@ -486,7 +489,8 @@ const schemaStatements = [
     id TEXT PRIMARY KEY,
     endpoint TEXT NOT NULL UNIQUE,
     payload_json TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
   )`,
   `CREATE TABLE IF NOT EXISTS lineups (
     id TEXT PRIMARY KEY,
@@ -1296,6 +1300,7 @@ async function handleApi(request: Request, env: Env) {
           users.nickname,
           users.created_year,
           users.created_at,
+          users.notification_preference,
           COALESCE(goal_totals.goal_count, 0) AS goals,
           COALESCE(assist_totals.assist_count, 0) AS assists
         FROM users
@@ -1323,6 +1328,7 @@ async function handleApi(request: Request, env: Env) {
           assists: Number(row.assists ?? 0),
           createdYear: row.created_year,
           createdAt: row.created_at,
+          notificationPreference: row.notification_preference,
         })),
       );
     }
@@ -1592,12 +1598,26 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
     }
 
+
+    if (pathname === '/api/users/notification-preference' && method === 'POST') {
+      const body = (await request.json()) as { userId?: string; preference?: 'all_chats' | 'tagged_only' | 'disabled' };
+      if (!body.userId || !body.preference) return errorResponse('userId and preference are required');
+      if (!['all_chats', 'tagged_only', 'disabled'].includes(body.preference)) return errorResponse('Invalid notification preference');
+      const existingUser = await env.DB.prepare('SELECT id FROM users WHERE id = ?1 LIMIT 1').bind(body.userId).first<{ id: string }>();
+      if (!existingUser?.id) return errorResponse('Unknown userId', 404);
+      await env.DB.prepare('UPDATE users SET notification_preference = ?1 WHERE id = ?2').bind(body.preference, body.userId).run();
+      if (body.preference === 'disabled') {
+        await env.DB.prepare('DELETE FROM push_subscriptions WHERE user_id = ?1').bind(body.userId).run();
+      }
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/users/upsert' && method === 'POST') {
       const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
       if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
-      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists FROM users WHERE lower(name) = lower(?1) LIMIT 1')
+      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists, notification_preference FROM users WHERE lower(name) = lower(?1) LIMIT 1')
         .bind(normalized)
         .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
@@ -1606,11 +1626,12 @@ async function handleApi(request: Request, env: Env) {
       const nickname = body.nickname ?? (byName?.nickname as string | null) ?? null;
       const goals = Number(byName?.goals ?? 0);
       const assists = Number(byName?.assists ?? 0);
+      const notificationPreference = (byName?.notification_preference as string | undefined) ?? 'all_chats';
 
       await env.DB.prepare(
-        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
+        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at, notification_preference) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
       )
-        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt)
+        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference)
         .run();
 
       const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
@@ -1621,7 +1642,7 @@ async function handleApi(request: Request, env: Env) {
           .run();
       }
 
-      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt }, 201, { 'Cache-Control': 'no-store' });
+      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference }, 201, { 'Cache-Control': 'no-store' });
     }
 
     return errorResponse('Not found', 404);

@@ -1,4 +1,4 @@
-import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, TeamEvent, User } from '../types/models';
+import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, NotificationPreference, TeamEvent, User } from '../types/models';
 import { readTeamPasscode } from '../utils/storage';
 
 const parse = async <T,>(response: Response): Promise<T> => {
@@ -76,3 +76,6 @@ export const acceptNextRef = (payload: { userId: string; eventId: string }) =>
 export const completeNextRef = (payload: { eventId: string }) =>
   api<NextRefState>('/next-ref/complete', { method: 'POST', body: JSON.stringify(payload) });
 export const getNextRefHistory = () => api<NextRefHistoryEntry[]>('/next-ref/history');
+
+export const saveNotificationPreference = (payload: { userId: string; preference: NotificationPreference }) =>
+  api<{ ok: true }>('/users/notification-preference', { method: 'POST', body: JSON.stringify(payload) });
