@@ -22,8 +22,8 @@ self.addEventListener('push', (event) => {
 
       await self.registration.showNotification(payload.title, {
         body: payload.body,
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
         data: { url: payload.url || '/chat' },
       });
     })(),
