@@ -152,17 +152,26 @@ const cacheHeadersFor = (pathname: string) => {
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
-const TAG_PATTERN = /@([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*)*)/g;
 
-const parseTaggedFullNames = (text: string) => {
-  const matches = text.matchAll(TAG_PATTERN);
-  const unique = new Set<string>();
-  for (const match of matches) {
-    const tagged = (match[1] ?? '').trim();
-    if (!tagged) continue;
-    unique.add(normalizeMentionName(tagged));
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parseTaggedNamesFromCandidates = (text: string, candidateNames: string[]) => {
+  const normalizedCandidates = Array.from(
+    new Set(
+      candidateNames
+        .map((name) => normalizeMentionName(name))
+        .filter((name) => Boolean(name)),
+    ),
+  ).sort((a, b) => b.length - a.length);
+
+  if (!normalizedCandidates.length) return [];
+
+  const matched = new Set<string>();
+  for (const candidate of normalizedCandidates) {
+    const pattern = new RegExp(`(^|[^A-Za-z0-9_])@${escapeRegExp(candidate)}(?=$|[^A-Za-z0-9_])`, 'i');
+    if (pattern.test(text)) matched.add(candidate);
   }
-  return Array.from(unique);
+  return Array.from(matched);
 };
 
 const getVapidConfig = (env: Env) => {
@@ -332,7 +341,8 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     return;
   }
 
-  const taggedNames = parseTaggedFullNames(payload.messageText);
+  const allUsers = await env.DB.prepare('SELECT id, name FROM users').all<{ id: string; name: string }>();
+  const taggedNames = parseTaggedNamesFromCandidates(payload.messageText, allUsers.results.map((user) => user.name));
   if (!taggedNames.length) {
     if (payload.messageText.includes('@')) {
       console.error('push_flow_no_valid_tags', {
@@ -343,16 +353,11 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     return;
   }
 
-  const placeholders = taggedNames.map((_, idx) => `?${idx + 1}`).join(', ');
-  const taggedUsers = await env.DB.prepare(
-    `SELECT id, name FROM users WHERE lower(trim(name)) IN (${placeholders})`,
-  )
-    .bind(...taggedNames)
-    .all<{ id: string; name: string }>();
+  const taggedUsers = allUsers.results.filter((user) => taggedNames.includes(normalizeMentionName(user.name)));
 
   const recipientIds = Array.from(
     new Set(
-      taggedUsers.results
+      taggedUsers
         .map((user) => user.id)
         .filter((userId) => userId !== payload.senderUserId),
     ),
@@ -361,7 +366,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     console.error('push_flow_no_recipients', {
       senderUserId: payload.senderUserId,
       taggedNames,
-      resolvedTaggedUsers: taggedUsers.results.map((user) => ({ id: user.id, name: user.name })),
+      resolvedTaggedUsers: taggedUsers.map((user) => ({ id: user.id, name: user.name })),
     });
     return;
   }
