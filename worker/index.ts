@@ -224,6 +224,8 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
     }
   }
 
+  if (offset + seqLen > der.length) throw new Error('Invalid DER signature length');
+
   if (der[offset] !== 0x02) throw new Error('Invalid DER signature');
   offset += 1;
   const rLength = der[offset];
@@ -236,8 +238,11 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
   const sLength = der[offset];
   offset += 1;
   let s = der.slice(offset, offset + sLength);
+
   while (r.length > outputLength / 2 && r[0] === 0) r = r.slice(1);
   while (s.length > outputLength / 2 && s[0] === 0) s = s.slice(1);
+  if (r.length > outputLength / 2 || s.length > outputLength / 2) throw new Error('Invalid DER signature component size');
+
   const rPadded = new Uint8Array(outputLength / 2);
   const sPadded = new Uint8Array(outputLength / 2);
   rPadded.set(r, outputLength / 2 - r.length);
@@ -246,6 +251,11 @@ const derToJose = (der: Uint8Array, outputLength: number) => {
   combined.set(rPadded, 0);
   combined.set(sPadded, outputLength / 2);
   return toBase64Url(combined);
+};
+
+const ecdsaSignatureToJose = (signature: Uint8Array, outputLength: number) => {
+  if (signature.length === outputLength) return toBase64Url(signature);
+  return derToJose(signature, outputLength);
 };
 
 const createVapidJwt = async (env: Env, endpoint: string) => {
@@ -281,7 +291,7 @@ const createVapidJwt = async (env: Env, endpoint: string) => {
       new TextEncoder().encode(data),
     ),
   );
-  const signatureJose = derToJose(signatureDer, 64);
+  const signatureJose = ecdsaSignatureToJose(signatureDer, 64);
   return `${data}.${signatureJose}`;
 };
 
