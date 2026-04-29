@@ -58,12 +58,16 @@ export const syncPushSubscription = async (userId: string) => {
   let subscription: PushSubscription | null = null;
   try {
     subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey,
-      });
+    if (subscription) {
+      await deletePushSubscription({ userId, endpoint: subscription.endpoint });
+      await subscription.unsubscribe();
+      subscription = null;
     }
+
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey,
+    });
   } catch (err) {
     return {
       ok: false,
