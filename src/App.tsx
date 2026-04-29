@@ -60,6 +60,7 @@ export default function App() {
   const [pushErrorDetail, setPushErrorDetail] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [notificationPreference, setNotificationPreference] = useState<NotificationPreference>('all_chats');
+  const [savedNotificationPreference, setSavedNotificationPreference] = useState<NotificationPreference>('all_chats');
   const [settingsStatus, setSettingsStatus] = useState('');
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
@@ -181,7 +182,9 @@ export default function App() {
 
   useEffect(() => {
     if (!currentUser || isVisitor) return;
-    setNotificationPreference(currentUser.notificationPreference ?? 'all_chats');
+    const pref = currentUser.notificationPreference ?? 'all_chats';
+    setNotificationPreference(pref);
+    setSavedNotificationPreference(pref);
   }, [currentUser, isVisitor]);
 
   const saveNotificationSettings = async () => {
@@ -193,7 +196,8 @@ export default function App() {
         await saveNotificationPreference({ userId: currentUserId, preference: 'disabled' });
         await disablePushNotifications(currentUserId);
         await refreshData(0, true);
-        setSettingsStatus('Notification settings saved.');
+        setSavedNotificationPreference('disabled');
+        setSettingsStatus('Saved ✓');
       } catch (err) {
         setSettingsStatus(err instanceof Error ? err.message : 'Failed to save settings.');
       }
@@ -201,13 +205,13 @@ export default function App() {
     }
 
     if (!canUsePushNotifications()) {
-      setSettingsStatus('Push notifications are not supported on this browser/device.');
+      setSettingsStatus('Push notifications are not supported on this device/browser.');
       return;
     }
 
     const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
     if (permission === 'denied') {
-      setSettingsStatus('Notifications are blocked. Please enable notifications in your browser/site settings.');
+      setSettingsStatus('Notifications are blocked in your browser. Enable them in site settings to receive alerts.');
       return;
     }
     if (permission !== 'granted') {
@@ -225,7 +229,8 @@ export default function App() {
     try {
       await saveNotificationPreference({ userId: currentUserId, preference: notificationPreference });
       await refreshData(0, true);
-      setSettingsStatus('Notification settings saved.');
+      setSavedNotificationPreference(notificationPreference);
+      setSettingsStatus('Saved ✓');
     } catch (err) {
       setSettingsStatus(err instanceof Error ? err.message : 'Failed to save settings.');
     }
@@ -414,17 +419,37 @@ export default function App() {
         {showSettings && !isVisitor && currentUser && (
           <div className="modal-backdrop" role="dialog" aria-modal="true">
             <div className="card modal">
-              <h3>Settings</h3>
+              <h3>⚙️ Settings</h3>
               <p className="muted">{currentUser.name}</p>
-              <label htmlFor="notif-pref">Chat notifications</label>
-              <select id="notif-pref" value={notificationPreference} onChange={(event) => setNotificationPreference(event.target.value as NotificationPreference)}>
-                <option value="all_chats">Notifications for all chats</option>
-                <option value="tagged_only">Notifications only when tagged in chat</option>
-                <option value="disabled">Notifications disabled</option>
-              </select>
+              <div className="stack">
+                <div>
+                  <p><strong>Chat Notifications</strong></p>
+                  <p className="muted">Choose when you want to be notified</p>
+                </div>
+                {([
+                  { value: 'all_chats', title: 'All messages', help: 'Get notified for every chat message' },
+                  { value: 'tagged_only', title: 'Mentions only', help: 'Only when someone tags you' },
+                  { value: 'disabled', title: 'Off', help: 'No notifications' },
+                ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`option-row ${notificationPreference === option.value ? 'active' : ''}`}
+                    onClick={() => {
+                      setNotificationPreference(option.value);
+                      setSettingsStatus('');
+                    }}
+                  >
+                    <span>
+                      <strong>{option.title}</strong>
+                      <small className="muted">{option.help}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
               <p className="muted" style={{ minHeight: 20 }}>{settingsStatus}</p>
               <div className="row">
-                <button type="button" onClick={() => void saveNotificationSettings()}>Save</button>
+                <button type="button" onClick={() => void saveNotificationSettings()} disabled={notificationPreference === savedNotificationPreference}>Save</button>
                 <button type="button" className="secondary" onClick={() => setShowSettings(false)}>Close</button>
               </div>
             </div>
