@@ -6,8 +6,7 @@ import { ChatPage } from './pages/ChatPage';
 import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
-import { TeamStatsPage } from './pages/TeamStatsPage';
-import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, upsertUser } from './services/dataService';
+import { clearAvailability, loadAppData, postAvailability, postLineup, postMessage, upsertUser } from './services/dataService';
 import { canUsePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
@@ -130,7 +129,6 @@ export default function App() {
   const isVisitor = Boolean(visitorUser);
   const canWrite = !isVisitor && teamPasscode.trim().length > 0;
   const canEditLineup = !isVisitor && teamPasscode.trim() === ADMIN_PASSCODE;
-  const canEditScores = canEditLineup;
   const shouldPromptPush = !isVisitor && Boolean(currentUserId) && pushStatus !== 'enabled' && pushStatus !== 'unsupported';
 
   const setPushFailure = (reason: PushSyncFailureReason, detail?: string) => {
@@ -168,18 +166,13 @@ export default function App() {
       setPushErrorDetail('');
       return;
     }
-
-    const init = async () => {
-      const result = await syncPushSubscription(currentUserId);
-      if (result.ok) {
-        setPushStatus('enabled');
-        setPushErrorDetail('');
-        return;
-      }
-      setPushFailure(result.reason, result.detail);
-    };
-
-    void init();
+    if (Notification.permission === 'denied') {
+      setPushStatus('denied');
+      setPushErrorDetail('');
+      return;
+    }
+    setPushStatus('idle');
+    setPushErrorDetail('');
   }, [currentUserId, isVisitor]);
 
   const enablePush = async () => {
@@ -191,7 +184,9 @@ export default function App() {
     }
     setPushStatus('prompting');
     setPushErrorDetail('');
-    const permission = await Notification.requestPermission();
+    const permission = Notification.permission === 'granted'
+      ? 'granted'
+      : await Notification.requestPermission();
     if (permission !== 'granted') {
       setPushFailure(permission);
       return;
@@ -212,6 +207,7 @@ export default function App() {
     if (pushStatus === 'unsupported') return 'This browser/device does not support push notifications.';
     if (pushStatus === 'error') return pushErrorDetail || 'Could not enable notifications right now.';
     if (!canUsePushNotifications()) return 'This browser/device does not support push notifications.';
+    if (Notification.permission === 'granted') return 'Notifications are allowed by your device. Tap Enable notifications to connect this app install.';
     return 'Enable push notifications to get alerted when someone tags you in chat.';
   })();
 
@@ -370,7 +366,11 @@ export default function App() {
             <p style={{ margin: 0 }}>{pushStatusLabel}</p>
             <div className="row" style={{ marginTop: 8 }}>
               <button type="button" onClick={() => void enablePush()} disabled={pushStatus === 'prompting' || pushStatus === 'denied'}>
-                {pushStatus === 'prompting' ? 'Waiting for permission…' : 'Enable notifications'}
+                {pushStatus === 'prompting'
+                  ? 'Waiting for permission…'
+                  : Notification.permission === 'granted'
+                    ? 'Enable notifications on this device'
+                    : 'Enable notifications'}
               </button>
             </div>
           </div>
