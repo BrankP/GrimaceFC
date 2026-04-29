@@ -674,6 +674,18 @@ const ensureUserStatsColumns = async (env: Env) => {
   }
 };
 
+
+const ensureUserNotificationPreferenceColumn = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('notification_preference')) {
+    await env.DB.prepare("ALTER TABLE users ADD COLUMN notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))").run();
+  }
+
+  await env.DB.prepare("UPDATE users SET notification_preference = 'all_chats' WHERE notification_preference IS NULL OR notification_preference = ''").run();
+};
+
 const ensureDefaultDutyAssignments = async (env: Env) => {
   const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC LIMIT 50').bind(SYSTEM_USER_ID).all<{ id: string }>();
   const userIds = users.results.map((user) => String(user.id));
@@ -726,6 +738,7 @@ const ensureSchema = async (env: Env) => {
       await ensureEventDutyColumns(env);
       await ensureLineupDutyColumns(env);
       await ensureUserStatsColumns(env);
+      await ensureUserNotificationPreferenceColumn(env);
       await ensureRefRosterIdColumn(env);
       await ensureNextRefStateSlotColumn(env);
       await ensureDefaultDutyAssignments(env);
