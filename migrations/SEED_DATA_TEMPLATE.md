@@ -27,24 +27,6 @@ This worksheet now mirrors the current requested seed set.
 | usr-020 | Zac Reyes |  | 2026 | 2026-01-01T00:00:00Z |
 
 ## 2) `events` (15)
-| id | event_type | date (ISO) | day_of_week | home_away | beer_duty_user_id | ref_duty_user_id | location | map_address | opponent | occasion | team_name | is_next_up |
-|---|---|---|---|---|---|---|---|---|---|---|---|---:|
-| evt-001 | Game | 2026-05-02T13:00:00Z | Saturday | Home | usr-009 |  | Brookvale | Millers Reserve | Brookvale | Game | Grimace FC | 1 |
-| evt-002 | Game | 2026-05-09T15:00:00Z | Saturday | Away | usr-011 |  | Saint Augustine’s | Passmore Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
-| evt-003 | Game | 2026-05-16T13:00:00Z | Saturday | Away | usr-013 |  | Manly Vale | David Thomas Reserve | Manly Vale | Game | Grimace FC | 0 |
-| evt-004 | Game | 2026-05-22T19:00:00Z | Friday | Home | usr-012 |  | Harbord | Millers Reserve | Harbord | Game | Grimace FC | 0 |
-| evt-005 | Game | 2026-05-30T15:00:00Z | Saturday | Away | usr-014 |  | Wakehurst | Lionel Watts Oval | Wakehurst | Game | Grimace FC | 0 |
-| evt-006 | Game | 2026-06-06T13:00:00Z | Saturday | Home | usr-016 |  | Curl Curl | Millers Reserve | Curl Curl | Game | Grimace FC | 0 |
-| evt-007 | Game | 2026-06-13T15:00:00Z | Saturday | Home | usr-008 |  | Collaroy Cromer | Millers Reserve | Collaroy Cromer | Game | Grimace FC | 0 |
-| evt-008 | Game | 2026-06-27T13:00:00Z | Saturday | Away | usr-007 |  | Curl Curl | Adam Street Reserve | Curl Curl | Game | Grimace FC | 0 |
-| evt-009 | Game | 2026-07-04T13:00:00Z | Saturday | Home | usr-017 |  | Allambie | Beacon Hill Reserve | Allambie | Game | Grimace FC | 0 |
-| evt-010 | Game | 2026-07-11T15:00:00Z | Saturday | Away | usr-003 |  | Brookvale | Grahams Reserve | Brookvale | Game | Grimace FC | 0 |
-| evt-011 | Game | 2026-07-18T15:00:00Z | Saturday | Home | usr-001 |  | Saint Augustine’s | Beacon Hill Reserve | Saint Augustine’s | Game | Grimace FC | 0 |
-| evt-012 | Game | 2026-07-25T13:00:00Z | Saturday | Home | usr-010 |  | Manly Vale | Millers Reserve | Manly Vale | Game | Grimace FC | 0 |
-| evt-013 | Game | 2026-08-01T15:00:00Z | Saturday | Away | usr-004 |  | Harbord | Nolan Reserve | Harbord | Game | Grimace FC | 0 |
-| evt-014 | Game | 2026-08-08T15:00:00Z | Saturday | Home | usr-019 |  | Wakehurst | Millers Reserve | Wakehurst | Game | Grimace FC | 0 |
-| evt-015 | Game | 2026-08-15T13:00:00Z | Saturday | Away | usr-005 |  | Curl Curl | Adam Street Reserve | Curl Curl | Game | Grimace FC | 0 |
-
 | id      | event_type | date (ISO)           | day_of_week | home_away | beer_duty_user_id | ref_duty_user_id | location          | map_address          | opponent          | occasion                  | team_name  | is_next_up |
 | ------- | ---------- | -------------------- | ----------- | --------- | ----------------- | ---------------- | ----------------- | -------------------- | ----------------- | ------------------------- | ---------- | ---------: |
 | evt-001 | Game       | 2026-03-14T05:00:00Z | Saturday    | Home      |                   |                  | ABH United 2026   | Tristram Road Reserve | ABH United AL6A's | Trial Match               | Grimace FC |          0 |
