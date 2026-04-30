@@ -447,8 +447,6 @@ const schemaStatements = [
     nickname TEXT,
     goals INTEGER NOT NULL DEFAULT 0,
     assists INTEGER NOT NULL DEFAULT 0,
-    created_year INTEGER NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
     notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
   )`,
   `CREATE TABLE IF NOT EXISTS events (
@@ -463,7 +461,6 @@ const schemaStatements = [
     map_address TEXT,
     opponent TEXT,
     occasion TEXT,
-    team_name TEXT NOT NULL,
     is_next_up INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY(beer_duty_user_id) REFERENCES users(id),
@@ -693,7 +690,7 @@ const ensureUserNotificationPreferenceColumn = async (env: Env) => {
 };
 
 const ensureDefaultDutyAssignments = async (env: Env) => {
-  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC LIMIT 50').bind(SYSTEM_USER_ID).all<{ id: string }>();
+  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY name ASC LIMIT 50').bind(SYSTEM_USER_ID).all<{ id: string }>();
   const userIds = users.results.map((user) => String(user.id));
   if (userIds.length === 0) return;
 
@@ -717,21 +714,19 @@ const ensureRefRosterSeed = async (env: Env) => {
   const countRow = await env.DB.prepare('SELECT COUNT(1) AS count FROM ref_roster').first<{ count: number }>();
   if (Number(countRow?.count ?? 0) > 0) return;
 
-  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY created_at ASC').bind(SYSTEM_USER_ID).all<{ id: string }>();
+  const users = await env.DB.prepare('SELECT id FROM users WHERE id != ?1 ORDER BY name ASC').bind(SYSTEM_USER_ID).all<{ id: string }>();
   let index = 0;
   for (const user of users.results) {
-    await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(createId('refslot'), user.id, index, nowIso())
+    await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order) VALUES (?1, ?2, ?3)')
+      .bind(createId('refslot'), user.id, index)
       .run();
     index += 1;
   }
 };
 
 const ensureGrimaceUser = async (env: Env) => {
-  await env.DB.prepare(
-    'INSERT INTO users (id, name, nickname, created_year, created_at) VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(id) DO NOTHING',
-  )
-    .bind(SYSTEM_USER_ID, 'Grimace', null, new Date().getFullYear(), nowIso())
+  await env.DB.prepare('INSERT INTO users (id, name, nickname) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO NOTHING')
+    .bind(SYSTEM_USER_ID, 'Grimace', null)
     .run();
 };
 
@@ -792,13 +787,12 @@ type NextAwayEventRow = {
   location: string;
   opponent: string | null;
   occasion: string | null;
-  team_name: string;
   is_next_up: number;
 };
 
 const getNextAwayEvent = (env: Env) =>
   env.DB.prepare(
-    "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, team_name, is_next_up FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND ref_duty_user_id IS NULL AND datetime(date) >= datetime('now') ORDER BY date ASC LIMIT 1",
+    "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, is_next_up FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND ref_duty_user_id IS NULL AND datetime(date) >= datetime('now') ORDER BY date ASC LIMIT 1",
   ).first<NextAwayEventRow>();
 
 const getTopRosterUser = (env: Env) =>
@@ -817,7 +811,7 @@ const resolveRosterSlotId = async (env: Env, maybeSlotIdOrUserId: string) => {
 
 const getNextEligibleRosterUser = async (env: Env, eventId: string, currentRefSlotId: string) => {
   const rosterRows = await env.DB.prepare(
-    'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC, ref_roster.created_at ASC',
+    'SELECT ref_roster.id AS id, ref_roster.user_id AS user_id, users.name AS name, ref_roster.roster_order AS roster_order FROM ref_roster JOIN users ON users.id = ref_roster.user_id ORDER BY ref_roster.roster_order ASC',
   ).all<{ id: string; user_id: string; name: string; roster_order: number }>();
   if (!rosterRows.results.length) return null;
 
@@ -965,7 +959,7 @@ const buildNextRefPayload = async (env: Env) => {
   const trackedState = await getTrackedNextRefState(env);
   const nextAway = trackedState
     ? await env.DB.prepare(
-      "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, team_name, is_next_up FROM events WHERE id = ?1 LIMIT 1",
+      "SELECT id, event_type, date, day_of_week, home_away, location, opponent, occasion, is_next_up FROM events WHERE id = ?1 LIMIT 1",
     ).bind(trackedState.event_id).first<NextAwayEventRow>()
     : await getNextAwayEvent(env);
   const rosterRows = await env.DB.prepare(
@@ -1002,7 +996,6 @@ const buildNextRefPayload = async (env: Env) => {
       location: nextAway.location,
       opponent: nextAway.opponent,
       occasion: nextAway.occasion,
-      teamName: nextAway.team_name,
       isNextUp: Boolean(nextAway.is_next_up),
     },
     currentRefUserId: currentRefRow?.user_id ?? null,
@@ -1045,7 +1038,6 @@ async function handleApi(request: Request, env: Env) {
           events.map_address,
           events.opponent,
           events.occasion,
-          events.team_name,
           events.is_next_up,
           event_scores.grimace_score,
           event_scores.opponent_score,
@@ -1073,7 +1065,6 @@ async function handleApi(request: Request, env: Env) {
           mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
-          teamName: row.team_name,
           isNextUp: Boolean(row.is_next_up),
           score: row.grimace_score === null || row.opponent_score === null
             ? null
@@ -1104,7 +1095,6 @@ async function handleApi(request: Request, env: Env) {
           events.map_address,
           events.opponent,
           events.occasion,
-          events.team_name,
           events.is_next_up,
           event_scores.grimace_score,
           event_scores.opponent_score,
@@ -1133,7 +1123,6 @@ async function handleApi(request: Request, env: Env) {
           mapAddress: row.map_address,
           opponent: row.opponent,
           occasion: row.occasion,
-          teamName: row.team_name,
           isNextUp: Boolean(row.is_next_up),
           score: row.grimace_score === null || row.opponent_score === null
             ? null
@@ -1317,8 +1306,6 @@ async function handleApi(request: Request, env: Env) {
           users.id,
           users.name,
           users.nickname,
-          users.created_year,
-          users.created_at,
           users.notification_preference,
           COALESCE(goal_totals.goal_count, 0) AS goals,
           COALESCE(assist_totals.assist_count, 0) AS assists
@@ -1335,7 +1322,7 @@ async function handleApi(request: Request, env: Env) {
           WHERE assist_user_id IS NOT NULL
           GROUP BY assist_user_id
         ) AS assist_totals ON assist_totals.user_id = users.id
-        ORDER BY users.created_at ASC
+        ORDER BY users.name ASC
         LIMIT 50`,
       ).all();
       return jsonResponse(
@@ -1345,8 +1332,6 @@ async function handleApi(request: Request, env: Env) {
           nickname: row.nickname,
           goals: Number(row.goals ?? 0),
           assists: Number(row.assists ?? 0),
-          createdYear: row.created_year,
-          createdAt: row.created_at,
           notificationPreference: row.notification_preference,
         })),
       );
@@ -1632,7 +1617,7 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/users/upsert' && method === 'POST') {
-      const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null; createdYear?: number };
+      const body = (await request.json()) as { id?: string; name?: string; nickname?: string | null };
       if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
@@ -1642,7 +1627,7 @@ async function handleApi(request: Request, env: Env) {
       const hasAssists = userColumns.has('assists');
       const hasNotificationPreference = userColumns.has('notification_preference');
 
-      const byNameFields = ['id', 'created_year', 'created_at', 'nickname'];
+      const byNameFields = ['id', 'nickname'];
       if (hasGoals) byNameFields.push('goals');
       if (hasAssists) byNameFields.push('assists');
       if (hasNotificationPreference) byNameFields.push('notification_preference');
@@ -1650,16 +1635,14 @@ async function handleApi(request: Request, env: Env) {
         .bind(normalized)
         .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
-      const createdAt = (byName?.created_at as string | undefined) ?? nowIso();
-      const createdYear = Number(body.createdYear ?? byName?.created_year ?? new Date().getFullYear());
       const nickname = body.nickname ?? (byName?.nickname as string | null) ?? null;
       const goals = Number(byName?.goals ?? 0);
       const assists = Number(byName?.assists ?? 0);
       const notificationPreference = (byName?.notification_preference as string | undefined) ?? 'all_chats';
 
-      const insertFields = ['id', 'name', 'nickname', 'created_year', 'created_at'];
-      const insertPlaceholders = ['?1', '?2', '?3', '?4', '?5'];
-      const insertValues: unknown[] = [id, normalized, nickname, createdYear, createdAt];
+      const insertFields = ['id', 'name', 'nickname'];
+      const insertPlaceholders = ['?1', '?2', '?3'];
+      const insertValues: unknown[] = [id, normalized, nickname];
       if (hasGoals) {
         insertFields.push('goals');
         insertPlaceholders.push(`?${insertPlaceholders.length + 1}`);
@@ -1685,12 +1668,12 @@ async function handleApi(request: Request, env: Env) {
       const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
       if (!existingRosterEntry) {
         const maxOrder = await env.DB.prepare('SELECT COALESCE(MAX(roster_order), -1) AS max_order FROM ref_roster').first<{ max_order: number }>();
-        await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order, created_at) VALUES (?1, ?2, ?3, ?4)')
-          .bind(createId('refslot'), id, Number(maxOrder?.max_order ?? -1) + 1, nowIso())
+        await env.DB.prepare('INSERT INTO ref_roster (id, user_id, roster_order) VALUES (?1, ?2, ?3)')
+          .bind(createId('refslot'), id, Number(maxOrder?.max_order ?? -1) + 1)
           .run();
       }
 
-      return jsonResponse({ id, name: normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference }, 201, { 'Cache-Control': 'no-store' });
+      return jsonResponse({ id, name: normalized, nickname, goals, assists, notificationPreference }, 201, { 'Cache-Control': 'no-store' });
     }
 
     return errorResponse('Not found', 404);
