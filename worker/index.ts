@@ -1636,7 +1636,17 @@ async function handleApi(request: Request, env: Env) {
       if (!body.name?.trim()) return errorResponse('name is required');
       const normalized = body.name.trim();
 
-      const byName = await env.DB.prepare('SELECT id, created_year, created_at, nickname, goals, assists, notification_preference FROM users WHERE lower(name) = lower(?1) LIMIT 1')
+      const userColumnsResult = await env.DB.prepare('PRAGMA table_info(users)').all<{ name: string }>();
+      const userColumns = new Set(userColumnsResult.results.map((column) => String(column.name)));
+      const hasGoals = userColumns.has('goals');
+      const hasAssists = userColumns.has('assists');
+      const hasNotificationPreference = userColumns.has('notification_preference');
+
+      const byNameFields = ['id', 'created_year', 'created_at', 'nickname'];
+      if (hasGoals) byNameFields.push('goals');
+      if (hasAssists) byNameFields.push('assists');
+      if (hasNotificationPreference) byNameFields.push('notification_preference');
+      const byName = await env.DB.prepare(`SELECT ${byNameFields.join(', ')} FROM users WHERE lower(name) = lower(?1) LIMIT 1`)
         .bind(normalized)
         .first();
       const id = body.id || (byName?.id as string | undefined) || createId('usr');
@@ -1647,10 +1657,29 @@ async function handleApi(request: Request, env: Env) {
       const assists = Number(byName?.assists ?? 0);
       const notificationPreference = (byName?.notification_preference as string | undefined) ?? 'all_chats';
 
+      const insertFields = ['id', 'name', 'nickname', 'created_year', 'created_at'];
+      const insertPlaceholders = ['?1', '?2', '?3', '?4', '?5'];
+      const insertValues: unknown[] = [id, normalized, nickname, createdYear, createdAt];
+      if (hasGoals) {
+        insertFields.push('goals');
+        insertPlaceholders.push(`?${insertPlaceholders.length + 1}`);
+        insertValues.push(goals);
+      }
+      if (hasAssists) {
+        insertFields.push('assists');
+        insertPlaceholders.push(`?${insertPlaceholders.length + 1}`);
+        insertValues.push(assists);
+      }
+      if (hasNotificationPreference) {
+        insertFields.push('notification_preference');
+        insertPlaceholders.push(`?${insertPlaceholders.length + 1}`);
+        insertValues.push(notificationPreference);
+      }
+
       await env.DB.prepare(
-        'INSERT INTO users (id, name, nickname, goals, assists, created_year, created_at, notification_preference) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname',
+        `INSERT INTO users (${insertFields.join(', ')}) VALUES (${insertPlaceholders.join(', ')}) ON CONFLICT(id) DO UPDATE SET name=excluded.name, nickname=excluded.nickname`,
       )
-        .bind(id, normalized, nickname, goals, assists, createdYear, createdAt, notificationPreference)
+        .bind(...insertValues)
         .run();
 
       const existingRosterEntry = await env.DB.prepare('SELECT id FROM ref_roster WHERE user_id = ?1 LIMIT 1').bind(id).first<{ id: string }>();
