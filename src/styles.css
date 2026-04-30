@@ -72,6 +72,16 @@ h1,h2,h3,p { margin: 0 0 .5rem; }
   gap: .2rem;
 }
 .row { display: flex; gap: .6rem; }
+.settings-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+}
+.danger-action {
+  margin-left: auto;
+}
 .stack { display: grid; gap: .6rem; }
 .filters { display: grid; gap: .45rem; }
 button { border: none; border-radius: 12px; background: var(--accent); color: white; padding: .7rem .9rem; min-height: 44px; }
