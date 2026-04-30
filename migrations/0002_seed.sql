@@ -102,8 +102,11 @@ INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
 ('refslot-039', 'usr-009', 38, '2026-01-01T00:00:00Z'),
 ('refslot-040', 'usr-019', 39, '2026-01-01T00:00:00Z');
 
-INSERT OR REPLACE INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES
-('evt-007', 'refslot-002', 'Pending Decision', 0, NULL, '2026-04-11T06:00:00Z', '2026-04-11T06:00:00Z');
+-- NOTE:
+-- Do not seed a fixed next_ref_state row here.
+-- Some long-lived databases still retain a legacy NOT NULL current_user_id column
+-- alongside current_ref_slot_id, and writing only the newer shape can fail.
+-- The worker initializes next_ref_state lazily from roster + events when needed.
 
 INSERT OR REPLACE INTO next_ref_history (id, event_id, referee_user_id, final_balance, passed_json, accepted_at, completed_at) VALUES
 ('nrh-001', 'evt-003', 'usr-012', 0, '[]', '2026-04-11T05:00:00Z', '2026-04-11T05:00:00Z');
