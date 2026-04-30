@@ -15,7 +15,13 @@ export function UpcomingGamesPage() {
   const { data, currentUser, getAvailability, setAvailability, getUserName, canWrite, canEditScores, saveEventScore } = useAppState();
   const store = data!;
 
-  const sortedEvents = useMemo(() => [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date)), [store.events]);
+  const sortedEvents = useMemo(() => {
+    const ascending = [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
+    const nowMs = Date.now();
+    const nextUpcomingIndex = ascending.findIndex((event) => +new Date(event.date) >= nowMs);
+    if (nextUpcomingIndex <= 0) return ascending;
+    return [...ascending.slice(nextUpcomingIndex), ...ascending.slice(0, nextUpcomingIndex)];
+  }, [store.events]);
   const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -49,7 +55,8 @@ export function UpcomingGamesPage() {
     if (event.eventType !== 'Game' || !event.score) return null;
     const { grimaceScore: gf, opponentScore: ga } = event.score;
     const tone = gf > ga ? 'win' : gf < ga ? 'loss' : 'draw';
-    return { text: `${gf} - ${ga}`, tone };
+    const prefix = tone === 'win' ? 'W' : tone === 'loss' ? 'L' : 'T';
+    return { text: `${prefix} ${gf}-${ga}`, tone };
   };
 
   const openScoreModal = (event: TeamEvent) => {
