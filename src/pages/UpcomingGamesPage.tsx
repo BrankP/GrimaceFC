@@ -16,12 +16,12 @@ export function UpcomingGamesPage() {
   const store = data!;
 
   const sortedEvents = useMemo(() => {
-    const ascending = [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
-    const nowMs = Date.now();
-    const nextUpcomingIndex = ascending.findIndex((event) => +new Date(event.date) >= nowMs);
-    if (nextUpcomingIndex <= 0) return ascending;
-    return [...ascending.slice(nextUpcomingIndex), ...ascending.slice(0, nextUpcomingIndex)];
+    return [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
   }, [store.events]);
+  const nextGameId = useMemo(() => {
+    const nowMs = Date.now();
+    return sortedEvents.find((event) => event.eventType === 'Game' && +new Date(event.date) >= nowMs)?.id ?? null;
+  }, [sortedEvents]);
   const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -32,6 +32,7 @@ export function UpcomingGamesPage() {
   const [formError, setFormError] = useState('');
   const longPressTimer = useRef<number | null>(null);
   const suppressClickAfterLongPress = useRef<Record<string, boolean>>({});
+  const eventCardRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const grouped = useMemo(
     () =>
@@ -80,6 +81,13 @@ export function UpcomingGamesPage() {
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
   }, []);
 
+  useEffect(() => {
+    if (!nextGameId) return;
+    const nextGameRow = eventCardRefs.current[nextGameId];
+    if (!nextGameRow) return;
+    nextGameRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [nextGameId]);
+
   return (
     <>
     <section>
@@ -108,7 +116,13 @@ export function UpcomingGamesPage() {
               const mapAddress = event.mapAddress || event.location;
 
               return (
-                <article key={event.id} className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+                <article
+                  key={event.id}
+                  ref={(element) => {
+                    eventCardRefs.current[event.id] = element;
+                  }}
+                  className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}
+                >
                   <div
                     className="sleek-event-header"
                     onClick={() => {
