@@ -236,6 +236,84 @@ export default function App() {
     }
   };
 
+  const wipeClientDataAndLogout = async () => {
+    const confirmed = window.confirm('Are you sure you want to wipe app cache and log out? This will clear local app data on this device.');
+    if (!confirmed) return;
+
+    setSettingsStatus('Wiping cache and logging out...');
+
+    await fetch('/api/logout', {
+      method: 'POST',
+      credentials: 'include',
+    }).catch(() => null);
+
+    try {
+      localStorage.clear();
+    } catch {
+      // best effort
+    }
+
+    try {
+      sessionStorage.clear();
+    } catch {
+      // best effort
+    }
+
+    try {
+      const cookies = document.cookie ? document.cookie.split(';') : [];
+      for (const rawCookie of cookies) {
+        const cookieName = rawCookie.split('=')[0]?.trim();
+        if (!cookieName) continue;
+        document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+      }
+    } catch {
+      // best effort
+    }
+
+    if ('indexedDB' in window) {
+      try {
+        const indexedDbWithDiscovery = indexedDB as IDBFactory & {
+          databases?: () => Promise<Array<{ name?: string }>>;
+        };
+        if (typeof indexedDbWithDiscovery.databases === 'function') {
+          const databases = await indexedDbWithDiscovery.databases();
+          await Promise.allSettled(
+            databases
+              .map((database) => database.name)
+              .filter((name): name is string => Boolean(name))
+              .map((name) => new Promise<void>((resolve) => {
+                const request = indexedDB.deleteDatabase(name);
+                request.onsuccess = () => resolve();
+                request.onerror = () => resolve();
+                request.onblocked = () => resolve();
+              })),
+          );
+        }
+      } catch {
+        // best effort
+      }
+    }
+
+    if ('caches' in window) {
+      try {
+        const cacheKeys = await caches.keys();
+        await Promise.allSettled(cacheKeys.map((key) => caches.delete(key)));
+      } catch {
+        // best effort
+      }
+    }
+
+    setCurrentUserId(null);
+    setVisitorSession(null);
+    setTeamPasscode('');
+    setPasscodeInput('');
+    setShowSettings(false);
+    setSettingsStatus('');
+    setError('');
+    navigate('/', { replace: true });
+    window.location.assign('/');
+  };
+
   const pushStatusLabel = (() => {
     if (pushStatus === 'enabled') return 'Notifications are enabled.';
     if (pushStatus === 'prompting') return 'Waiting for browser permission prompt…';
@@ -447,9 +525,14 @@ export default function App() {
                 ))}
               </div>
               <p className="muted" style={{ minHeight: 20 }}>{settingsStatus}</p>
-              <div className="row">
-                <button type="button" onClick={() => void saveNotificationSettings()} disabled={notificationPreference === savedNotificationPreference}>Save</button>
-                <button type="button" className="secondary" onClick={() => setShowSettings(false)}>Close</button>
+              <div className="settings-actions">
+                <div className="row">
+                  <button type="button" onClick={() => void saveNotificationSettings()} disabled={notificationPreference === savedNotificationPreference}>Save</button>
+                  <button type="button" className="secondary" onClick={() => setShowSettings(false)}>Close</button>
+                </div>
+                <button type="button" className="secondary danger-action" onClick={() => void wipeClientDataAndLogout()}>
+                  Wipe Cache
+                </button>
               </div>
             </div>
           </div>
