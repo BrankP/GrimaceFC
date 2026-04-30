@@ -1,17 +1,120 @@
--- Seed data worksheet: see migrations/SEED_DATA_TEMPLATE.md
+PRAGMA foreign_keys = ON;
 
--- Wipe existing seeded data (child tables first)
-DELETE FROM next_ref_passes;
-DELETE FROM next_ref_history;
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  nickname TEXT,
+  created_year INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  date TEXT NOT NULL,
+  day_of_week TEXT NOT NULL,
+  home_away TEXT,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
+  location TEXT NOT NULL,
+  map_address TEXT,
+  opponent TEXT,
+  occasion TEXT,
+  team_name TEXT NOT NULL,
+  is_next_up INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ref_roster (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  roster_order INTEGER NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_state (
+  event_id TEXT PRIMARY KEY,
+  current_ref_slot_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('Pending Decision','Accepted')),
+  running_balance INTEGER NOT NULL DEFAULT 0,
+  accepted_at TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_history (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  referee_user_id TEXT NOT NULL,
+  final_balance INTEGER NOT NULL,
+  passed_json TEXT NOT NULL,
+  accepted_at TEXT,
+  completed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS event_scores (
+  event_id TEXT PRIMARY KEY,
+  grimace_score INTEGER NOT NULL,
+  opponent_score INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  p256dh_key TEXT NOT NULL,
+  auth_key TEXT NOT NULL,
+  expiration_time INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_notification_queue (
+  id TEXT PRIMARY KEY,
+  endpoint TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lineups (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  formation TEXT NOT NULL,
+  positions_json TEXT NOT NULL,
+  subs_json TEXT NOT NULL,
+  not_available_json TEXT NOT NULL,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS availability (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('available','not_available')),
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 DELETE FROM next_ref_state;
+DELETE FROM next_ref_history;
+DELETE FROM ref_roster;
 DELETE FROM availability;
 DELETE FROM lineups;
 DELETE FROM messages;
-DELETE FROM event_goal_details;
 DELETE FROM event_scores;
 DELETE FROM push_notification_queue;
 DELETE FROM push_subscriptions;
-DELETE FROM ref_roster;
 DELETE FROM events;
 DELETE FROM users;
 
@@ -43,9 +146,9 @@ INSERT OR REPLACE INTO events (id, event_type, date, day_of_week, home_away, bee
 ('evt-003', 'Game', '2026-04-11T05:00:00Z', 'Saturday', 'Away', 'usr-020', 'usr-012', 'CC Strikers', NULL, 'CC Strikers', 'Game', 'Grimace FC', 0),
 ('evt-004', 'Game', '2026-04-18T05:00:00Z', 'Saturday', 'Home', 'usr-006', NULL, 'ABH United 2026', NULL, 'Curl Curl A', 'Game', 'Grimace FC', 0),
 ('evt-005', 'Game', '2026-04-22T05:00:00Z', 'Wednesday', 'Away', 'usr-015', NULL, 'ABH United A', NULL, 'ABH United A', 'Game', 'Grimace FC', 0),
-('evt-006', 'Sesh', '2026-04-25T00:00:00Z', 'Saturday', NULL, NULL, NULL, 'TBD', NULL, NULL, 'Grimaces 2-up Spectacular', 'Grimace FC', 0),
+('evt-006', 'Sesh', '2026-04-25T00:00:00Z', 'Saturday', NULL, NULL, NULL, '', NULL, NULL, 'Grimaces 2-up Spectacular', 'Grimace FC', 0),
 ('evt-007', 'Game', '2026-05-02T13:00:00Z', 'Saturday', 'Home', 'usr-009', NULL, 'Brookvale', 'Millers Reserve', 'Brookvale', 'Game', 'Grimace FC', 1),
-('evt-008', 'Game', '2026-05-09T15:00:00Z', 'Saturday', 'Away', 'usr-011', NULL, 'Saint Augustine''s', 'Passmore Reserve', 'Saint Augustine''s', 'Game', 'Grimace FC', 0),
+('evt-008', 'Game', '2026-05-09T15:00:00Z', 'Saturday', 'Away', 'usr-011', NULL, 'Saint Augustine’s', 'Passmore Reserve', 'Saint Augustine’s', 'Game', 'Grimace FC', 0),
 ('evt-009', 'Game', '2026-05-16T13:00:00Z', 'Saturday', 'Away', 'usr-013', NULL, 'Manly Vale', 'David Thomas Reserve', 'Manly Vale', 'Game', 'Grimace FC', 0),
 ('evt-010', 'Game', '2026-05-22T19:00:00Z', 'Friday', 'Home', 'usr-012', NULL, 'Harbord', 'Millers Reserve', 'Harbord', 'Game', 'Grimace FC', 0),
 ('evt-011', 'Game', '2026-05-30T15:00:00Z', 'Saturday', 'Away', 'usr-014', NULL, 'Wakehurst', 'Lionel Watts Oval', 'Wakehurst', 'Game', 'Grimace FC', 0),
@@ -54,15 +157,15 @@ INSERT OR REPLACE INTO events (id, event_type, date, day_of_week, home_away, bee
 ('evt-014', 'Game', '2026-06-27T13:00:00Z', 'Saturday', 'Away', 'usr-007', NULL, 'Curl Curl', 'Adam Street Reserve', 'Curl Curl', 'Game', 'Grimace FC', 0),
 ('evt-015', 'Game', '2026-07-04T13:00:00Z', 'Saturday', 'Home', 'usr-017', NULL, 'Allambie', 'Beacon Hill Reserve', 'Allambie', 'Game', 'Grimace FC', 0),
 ('evt-016', 'Game', '2026-07-11T15:00:00Z', 'Saturday', 'Away', 'usr-003', NULL, 'Brookvale', 'Grahams Reserve', 'Brookvale', 'Game', 'Grimace FC', 0),
-('evt-017', 'Game', '2026-07-18T15:00:00Z', 'Saturday', 'Home', 'usr-001', NULL, 'Saint Augustine''s', 'Beacon Hill Reserve', 'Saint Augustine''s', 'Game', 'Grimace FC', 0),
+('evt-017', 'Game', '2026-07-18T15:00:00Z', 'Saturday', 'Home', 'usr-001', NULL, 'Saint Augustine’s', 'Beacon Hill Reserve', 'Saint Augustine’s', 'Game', 'Grimace FC', 0),
 ('evt-018', 'Game', '2026-07-25T13:00:00Z', 'Saturday', 'Home', 'usr-010', NULL, 'Manly Vale', 'Millers Reserve', 'Manly Vale', 'Game', 'Grimace FC', 0),
 ('evt-019', 'Game', '2026-08-01T15:00:00Z', 'Saturday', 'Away', 'usr-004', NULL, 'Harbord', 'Nolan Reserve', 'Harbord', 'Game', 'Grimace FC', 0),
 ('evt-020', 'Game', '2026-08-08T15:00:00Z', 'Saturday', 'Home', 'usr-019', NULL, 'Wakehurst', 'Millers Reserve', 'Wakehurst', 'Game', 'Grimace FC', 0),
 ('evt-021', 'Game', '2026-08-15T13:00:00Z', 'Saturday', 'Away', 'usr-005', NULL, 'Curl Curl', 'Adam Street Reserve', 'Curl Curl', 'Game', 'Grimace FC', 0);
 
 INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
-('refslot-001', 'usr-011', 0, '2026-01-01T00:00:00Z'),
-('refslot-002', 'usr-012', 1, '2026-01-01T00:00:00Z'),
+('refslot-001', 'usr-012', 0, '2026-01-01T00:00:00Z'),
+('refslot-002', 'usr-011', 1, '2026-01-01T00:00:00Z'),
 ('refslot-003', 'usr-004', 2, '2026-01-01T00:00:00Z'),
 ('refslot-004', 'usr-015', 3, '2026-01-01T00:00:00Z'),
 ('refslot-005', 'usr-018', 4, '2026-01-01T00:00:00Z'),
@@ -102,11 +205,8 @@ INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
 ('refslot-039', 'usr-009', 38, '2026-01-01T00:00:00Z'),
 ('refslot-040', 'usr-019', 39, '2026-01-01T00:00:00Z');
 
--- NOTE:
--- Do not seed a fixed next_ref_state row here.
--- Some long-lived databases still retain a legacy NOT NULL current_user_id column
--- alongside current_ref_slot_id, and writing only the newer shape can fail.
--- The worker initializes next_ref_state lazily from roster + events when needed.
+INSERT OR REPLACE INTO next_ref_state (event_id, current_ref_slot_id, status, running_balance, accepted_at, updated_at, created_at) VALUES
+('evt-007', 'refslot-002', 'Pending Decision', 0, NULL, '2026-04-11T06:00:00Z', '2026-04-11T06:00:00Z');
 
 INSERT OR REPLACE INTO next_ref_history (id, event_id, referee_user_id, final_balance, passed_json, accepted_at, completed_at) VALUES
 ('nrh-001', 'evt-003', 'usr-012', 0, '[]', '2026-04-11T05:00:00Z', '2026-04-11T05:00:00Z');
@@ -117,6 +217,3 @@ INSERT OR REPLACE INTO event_scores (event_id, grimace_score, opponent_score, up
 ('evt-003', 2, 2, '2026-04-11T07:00:00Z', '2026-04-11T07:00:00Z'),
 ('evt-004', 3, 2, '2026-04-18T07:00:00Z', '2026-04-18T07:00:00Z'),
 ('evt-005', 2, 2, '2026-04-22T07:00:00Z', '2026-04-22T07:00:00Z');
-
--- Optional tables intentionally left empty in baseline seed:
--- messages, availability, next_ref_passes, push_subscriptions, push_notification_queue, event_goal_details
