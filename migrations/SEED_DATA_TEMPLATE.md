@@ -143,6 +143,11 @@ This worksheet now mirrors the current requested seed set.
 ## 12) `event_scores`
 | event_id | grimace_score | opponent_score | updated_at (ISO) | created_at (ISO) |
 |---|---:|---:|---|---|
+| evt-001 | 2 | 2 | 2026-03-14T07:00:00Z | 2026-03-14T07:00:00Z |
+| evt-002 | 2 | 6 | 2026-03-28T07:00:00Z | 2026-03-28T07:00:00Z |
+| evt-003 | 2 | 2 | 2026-04-11T07:00:00Z | 2026-04-11T07:00:00Z |
+| evt-004 | 3 | 2 | 2026-04-18T07:00:00Z | 2026-04-18T07:00:00Z |
+| evt-005 | 2 | 2 | 2026-04-22T07:00:00Z | 2026-04-22T07:00:00Z |
 <!-- Dummy example row: | evt-007 | 3 | 1 | 2026-05-02T15:00:00Z | 2026-05-02T15:00:00Z | -->
 
 ## 13) `event_goal_details`
