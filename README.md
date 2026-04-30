@@ -1,205 +1,346 @@
-# Grimace FC — Cloudflare Worker + D1
+# Grimace FC Functional & Data Reference
 
-Grimace FC now runs as a Cloudflare Worker serving both:
-- the built React/Vite frontend (`dist` assets)
-- JSON API routes under `/api/*`
+This README is intended to help product owners decide **what to keep, change, or remove** in the app.
 
-Shared app state is now persisted in **Cloudflare D1**.
+It includes:
+1. Every known database table and its fields.
+2. A page-by-page list of user-facing functions (including pop-ups/modals) and what each does.
 
-## Architecture
+---
 
-- Frontend: React + Vite (mobile-first UI)
-- Backend: Cloudflare Worker (`worker/index.ts`)
-- Database: Cloudflare D1 (`env.DB` binding)
-- No auth (all users can edit)
+## 1) Database Tables and Field Descriptions
 
-## Database schema & seeds
+Source of truth for schema: `migrations/master_seed.sql`.
 
-Migrations live in `migrations/`:
-- `0001_init.sql` — schema
-- `0002_seed.sql` — sample data (5+ rows per table)
+### `users`
+Stores player/user identity and notification preferences.
 
-No static JSON data files are used in production. D1 is the single source of truth.
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Unique user identifier. |
+| `name` | TEXT | Full display name (e.g., first + last). |
+| `nickname` | TEXT (nullable) | Optional nickname shown in chat display names. |
+| `notification_preference` | TEXT | Push preference: `all_chats`, `tagged_only`, or `disabled`. |
 
-Tables:
-- users
-- events
-- messages
-- fines
-- lineups
-- availability
-- ref_roster
-- next_ref_state
-- next_ref_passes
-- next_ref_history
+### `events`
+Stores all matches and sessions shown in Upcoming + related screens.
 
-## API endpoints
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Unique event identifier. |
+| `event_type` | TEXT | Event type (e.g., `Game`, `Sesh`). |
+| `date` | TEXT | Event date/time (ISO string). |
+| `day_of_week` | TEXT | Day name for display/grouping. |
+| `home_away` | TEXT (nullable) | Home/away status where applicable. |
+| `beer_duty_user_id` | TEXT (nullable) | Assigned beer duty user id. |
+| `ref_duty_user_id` | TEXT (nullable) | Assigned referee user id (if already set). |
+| `location` | TEXT | Venue/location label. |
+| `map_address` | TEXT (nullable) | Address used for map embed if different from location label. |
+| `opponent` | TEXT (nullable) | Opponent name for games. |
+| `occasion` | TEXT (nullable) | Session or event descriptor (e.g., special sesh title). |
+| `is_next_up` | INTEGER | Flag to visually mark the “next up” event. |
 
-- `GET /api/events`
-- `GET /api/next-game`
-- `GET /api/users`
-- `GET /api/messages`
-- `POST /api/messages`
-- `GET /api/push/vapid-public-key`
-- `GET /api/push/pending?endpoint=`
-- `POST /api/push/subscription`
-- `DELETE /api/push/subscription`
-- `GET /api/fines`
-- `POST /api/fines`
-- `GET /api/lineup?eventId=`
-- `POST /api/lineup`
-- `GET /api/availability`
-- `POST /api/availability`
-- `POST /api/users/upsert`
-- `GET /api/next-ref`
-- `POST /api/next-ref/pass`
-- `POST /api/next-ref/accept`
-- `POST /api/next-ref/complete`
-- `GET /api/next-ref/history`
+### `ref_roster`
+Ordered rotation list for next referee assignment flow.
 
-All endpoints return JSON and include permissive CORS headers.
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Unique roster slot id. |
+| `user_id` | TEXT | User occupying this slot in the rotation. |
+| `roster_order` | INTEGER (unique) | Absolute order in rotation list. |
 
+### `next_ref_state`
+Current active “Next Ref” workflow state for an event.
 
-## Example `env.DB` queries
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | TEXT (PK) | Event currently tied to ref-duty decision. |
+| `current_ref_slot_id` | TEXT | Current roster slot being asked to referee. |
+| `status` | TEXT | `Pending Decision` or `Accepted`. |
+| `running_balance` | INTEGER | Running monetary balance accrued through passes. |
+| `accepted_at` | TEXT (nullable) | Timestamp when duty was accepted. |
+| `updated_at` | TEXT | Last state update timestamp. |
+| `created_at` | TEXT | Initial creation timestamp for this state row. |
 
-```ts
-// read
-const events = await env.DB.prepare('SELECT * FROM events ORDER BY date ASC').all();
+### `next_ref_history`
+Audit/history of completed referee decisions.
 
-// write with bind parameters
-await env.DB
-  .prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-  .bind(id, userId, text, new Date().toISOString())
-  .run();
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Unique history row id. |
+| `event_id` | TEXT | Event that was completed in the workflow. |
+| `referee_user_id` | TEXT | Final assigned referee user id. |
+| `final_balance` | INTEGER | Final $ balance recorded on completion. |
+| `passed_json` | TEXT | JSON array of pass history entries for that event. |
+| `accepted_at` | TEXT (nullable) | When final referee accepted duty. |
+| `completed_at` | TEXT | When duty was marked complete. |
 
-## Frontend data behavior
+### `event_scores`
+Score records per event.
 
-- App data is fetched from Worker API (D1 source of truth)
-- Writes (messages/fines/lineup/users/availability) are sent via POST routes
-- Next referee duty is handled via `/api/next-ref*` routes and tied to the next upcoming away game
-- localStorage is now only used for:
-  - current user id
-  - optional UI preferences
+| Field | Type | Description |
+|---|---|---|
+| `event_id` | TEXT (PK) | Event being scored. |
+| `grimace_score` | INTEGER | Grimace FC goals. |
+| `opponent_score` | INTEGER | Opponent goals. |
+| `updated_at` | TEXT | Last score update timestamp. |
+| `created_at` | TEXT | Score row creation timestamp. |
 
-## Local development
+### `push_subscriptions`
+Per-device/browser web push registration records.
 
-```bash
-npm install
-npm run dev
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Subscription record id. |
+| `user_id` | TEXT | User tied to this endpoint. |
+| `endpoint` | TEXT | Web Push endpoint URL from browser. |
+| `p256dh_key` | TEXT | Public encryption key for subscription payload encryption. |
+| `auth_key` | TEXT | Auth secret key for push protocol. |
+| `expiration_time` | INTEGER (nullable) | Browser-provided subscription expiration epoch (if set). |
+| `created_at` | TEXT | Subscription creation timestamp. |
+| `updated_at` | TEXT | Last refresh/update timestamp. |
 
-Run worker locally:
+### `push_notification_queue`
+Outbound push payload queue table.
 
-```bash
-npm run cf:dev
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Queue item id. |
+| `endpoint` | TEXT | Target push endpoint URL. |
+| `payload_json` | TEXT | JSON payload to send. |
+| `created_at` | TEXT | Queue insertion timestamp. |
 
-## D1 migration/seed
+### `messages`
+Team chat messages.
 
-```bash
-npm run db:migrate
-npm run db:seed
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Message id. |
+| `user_id` | TEXT | Authoring user id. |
+| `text` | TEXT | Raw message content. |
+| `created_at` | TEXT | Timestamp when message was posted. |
 
-## Build and deploy (Cloudflare only)
+### `lineups`
+Saved lineup for an event, including formation placement and bench lists.
 
-```bash
-npm run build
-npm run cf:deploy
-```
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Lineup row id. |
+| `event_id` | TEXT | Event this lineup belongs to. |
+| `formation` | TEXT | Formation value (currently `4-3-3`). |
+| `positions_json` | TEXT | JSON map of formation position -> user id/null. |
+| `subs_json` | TEXT | JSON array of user ids on subs bench. |
+| `not_available_json` | TEXT | JSON array of user ids marked unavailable. |
+| `beer_duty_user_id` | TEXT (nullable) | Beer duty assignment persisted with lineup. |
+| `ref_duty_user_id` | TEXT (nullable) | Referee duty assignment persisted with lineup. |
+| `updated_at` | TEXT | Last lineup update timestamp. |
+| `created_at` | TEXT | Lineup creation timestamp. |
 
-`wrangler.jsonc` is configured to:
-- use `env.DB` binding
-- serve SPA assets from `dist`
-- keep `/api/*` in Worker runtime
+### `availability`
+Per-user attendance response per event.
 
+| Field | Type | Description |
+|---|---|---|
+| `id` | TEXT (PK) | Availability row id. |
+| `event_id` | TEXT | Related event id. |
+| `user_id` | TEXT | User giving response. |
+| `status` | TEXT | `available` or `not_available`. |
+| `updated_at` | TEXT | Last response change time. |
+| `created_at` | TEXT | Initial response creation time. |
 
-## Basic protection
+---
 
-The Worker includes a pragmatic protection stack:
+## 2) User Functions by Page + Pop-Ups
 
-- **IP rate limiting (in-memory)**
-  - Reads (`GET`/`HEAD`): 60 req/min/IP
-  - Writes (`POST`/`PUT`/`PATCH`/`DELETE`): 20 req/min/IP
-  - Returns `429` JSON and `Retry-After`
-- **Short-lived caching for read APIs**
-  - `/api/events`, `/api/next-game`: 60s
-  - `/api/messages`, `/api/fines`, `/api/lineup`: 20s
-  - `/api/next-ref`, `/api/next-ref/history`: no-store
-- **Query caps + ordering**
-  - messages/fines/events capped to predictable limits
-- **Debounced frontend polling**
-  - messages refresh at most every ~10s (12s interval)
-  - broader data refresh at most every ~30s (45s interval)
-- **Write passcode protection**
-  - all write routes require `x-team-passcode`
-  - server verifies against `env.TEAM_PASSCODE`
+This section is written so you can decide what product behavior to keep/retire.
 
-### Set the team passcode secret
+## Global / Entry Flow
 
-```bash
-wrangler secret put TEAM_PASSCODE
-```
+### Name Gate (login/entry screen)
+- **First Name + Last Name inputs**: user identity inputs required for entry.
+- **Visitor checkbox**: enables read-only mode (no writing to chat, attendance, ref actions, lineup edits).
+- **Team Passcode input** (hidden in visitor mode): required for player/admin write access.
+- **Continue / Enter as Visitor button**:
+  - Visitor mode: stores local visitor session and enters app in view-only mode.
+  - Team mode: validates passcode, upserts/creates user by full name, persists active user id and passcode locally.
 
-Use this value when prompted:
+### Bottom Navigation
+- **Upcoming**: opens Upcoming Games & Sessions page.
+- **Chat**: opens chat page.
+- **Next Game**: opens drag/drop lineup page.
+- **Next Ref**: opens referee rotation workflow page.
+- **Team Stats**: opens stats/rankings page.
 
-```text
-foleycanseeinthedark
-```
+### Global Settings Modal (⚙️ in header, non-visitor users)
+- **Open Settings button**: launches settings modal.
+- **Chat notification preference options**:
+  - All messages
+  - Mentions only
+- **Save button**:
+  - Persists selected notification preference.
+  - Handles browser push permission flow and subscription sync when needed.
+- **Close button**: closes settings modal without additional changes.
+- **Wipe Cache button**:
+  - Shows confirmation prompt.
+  - Calls logout endpoint (best effort).
+  - Clears localStorage/sessionStorage/cookies/indexedDB/caches (best effort).
+  - Resets local app session and returns to entry route.
 
-## Push notifications (tag-only)
+### Passcode Prompt Modal (write failure recovery)
+- Triggered when write call fails due to auth/passcode issues.
+- **Passcode input + Save**: updates locally stored team passcode used for future write requests.
+- **Close**: dismisses modal.
 
-Push notifications are native Web Push (Service Worker + Push API) and only fire when a registered user is tagged in chat using `@Full Name`.
+---
 
-### Required Worker secrets
+## Upcoming Games & Sessions Page
 
-Set the following before deploying:
+### Event list and cards
+- **Month grouping**: events grouped by month.
+- **Event row tap/click**: expands/collapses detailed event panel.
+- **Long press on game row (admin)**: opens score entry/edit modal for that event.
+- **Visual indicators**:
+  - Home/Away/Sesh indicator icon.
+  - “Next up” styling for flagged event.
+  - Duty warning icon if logged-in user has beer/ref duty.
 
-```bash
-wrangler secret put VAPID_PUBLIC_KEY
-wrangler secret put VAPID_PRIVATE_KEY
-wrangler secret put VAPID_SUBJECT
-```
+### Attendance actions
+- **✅ button**: marks current user as available for that event.
+- **❌ button**: marks current user as not available.
+- Buttons are disabled in visitor mode/no write access.
 
-- `VAPID_PUBLIC_KEY`: public VAPID key (base64url)
-- `VAPID_PRIVATE_KEY`: private VAPID key (base64url)
-- `VAPID_SUBJECT`: contact URI, e.g. `mailto:you@example.com`
+### Expanded card details
+- Shows Beer Duty + Ref Duty assignment.
+- Shows attendance groups:
+  - Attending
+  - Not Attending
+  - No Response
+- Shows embedded Google map for venue/address.
 
-### Migration
+### Score Modal (admin-only via long press)
+- **Grimace FC score / Opponent score inputs**: whole numbers only.
+- **Goal scorer rows**:
+  - Scorer dropdown (includes “Own Goal”).
+  - Assist dropdown (optional).
+  - Remove row button.
+  - Add goal row button.
+- **Validation**:
+  - Scores must be integer >= 0.
+  - Non-own-goal rows require a scorer.
+- **Save score**: saves event score + structured goal details.
+- **Cancel**: closes modal without saving.
 
-Apply migrations so `push_subscriptions` exists:
+---
 
-```bash
-npm run db:migrate
-```
+## Chat Page
 
-### Debugging push delivery (Cloudflare Worker logs)
+### Message thread
+- Groups messages by day with date divider.
+- Shows message author display name (nickname if set) + timestamp.
+- Tagged names in message text are visually highlighted.
 
-Open a second terminal at the repo root and stream Worker logs:
+### Message composer (write-enabled users)
+- **Message input**: enter chat text.
+- **@ mention support**:
+  - Typing `@` starts mention suggestions.
+  - Arrow keys cycle suggestions.
+  - Tab selects active suggestion.
+  - Click suggestion to insert mention.
+- **Send button**: submits message to team chat.
 
-```bash
-wrangler tail
-```
+### Nickname Modal
+- Trigger: clicking a user name in chat bubble (write-enabled users).
+- **Nickname input**: edit display nickname for selected user.
+- **Save**: persists nickname.
+- **Cancel**: close without saving.
 
-If you use a non-default Wrangler environment, include it explicitly:
+### Visitor behavior
+- Chat input is replaced by a view-only message.
 
-```bash
-wrangler tail --env production
-```
+---
 
-Recommended mobile-first test flow:
+## Next Game Page (Lineup Drag & Drop)
 
-1. Terminal A: run your app/worker as normal.
-2. Terminal B: run `wrangler tail`.
-3. On mobile PWA (User A), tap **Enable notifications on this device**.
-4. On desktop (User B), send a chat tag like `@Brad Fox can you bring cones`.
-5. In logs, look for push-related errors:
-   - `push_send_failed`
-   - `push_notification_flow_failed`
+### Core lineup management
+- Displays next upcoming game + local timezone.
+- Formation rendered as a draggable `4-3-3` board.
+- Player chips can be moved between:
+  - Field positions
+  - Subs
+  - Not available
+  - Unknowns
 
-If no push arrives, copy the Worker log lines with status code/response text from `push_send_failed` and use those to troubleshoot subscription/VAPID issues.
+### Drag/drop behavior
+- **Position ↔ Position swap**: swapping occupied field slots swaps player placement.
+- **Move to Subs**: player becomes a substitute.
+- **Move to Not available**: player marked unavailable.
+- **Move to Unknowns**: clears attendance state for that player.
+- **Auto-displacement rule**: dropping onto occupied field slot displaces previous player to subs.
+- Each successful move saves updated lineup and writes corresponding availability updates.
 
-### Rate limit tradeoff
+### Permissions
+- Non-admin users see lineup in read-only mode (dragging disabled).
 
-Current IP rate limiting is isolate-local in memory. This is intentionally simple and lightweight, but not globally consistent across all Worker isolates/instances. The helper is structured to be swapped later for KV or Durable Objects when stronger global enforcement is needed.
+---
+
+## Next Ref Page
+
+### Current state summary
+- Shows next away game details.
+- Shows current assigned referee and status (`Pending Decision` / `Accepted`).
+- Shows running balance and who has passed.
+
+### Action buttons
+- **Pass Duty**:
+  - Available to current assigned ref or admin override.
+  - Requires confirmation dialog.
+  - Advances to next roster candidate and updates running balance/pass list.
+- **Accept Duty**:
+  - Available to current assigned ref or admin override.
+  - Requires confirmation dialog.
+  - Locks state as accepted.
+- **Complete Duty** (admin only):
+  - Requires confirmation dialog.
+  - Finalizes current event and archives record into completed history.
+
+### Ref roster views
+- Inline preview list around current roster position.
+- **Expand Roster** button opens full roster modal.
+- **Full Roster modal** shows all roster entries and highlights current assignee.
+- **Close** button dismisses roster modal.
+
+### History
+- Completed history entries show:
+  - Match/opponent/date
+  - Final referee
+  - Final balance
+  - Who passed
+
+---
+
+## Team Stats Page
+
+### Summary cards
+- Total Goal Count.
+- Total Assist Count.
+- “My Contributions” (current user goals + assists).
+
+### Ranked lists
+- **Top Scorers** list.
+- **Top Assisters** list.
+- **View All / Show Less** toggle for long lists.
+
+### Top Contributor card
+- Highlights player with highest goal contributions.
+- Shows combined total + goals/assists breakdown.
+
+---
+
+## 3) Keep / Remove Decision Helper
+
+If you want, you can now evaluate each function in three passes:
+1. **Must keep** (core team operations: attendance, chat, lineup, ref flow).
+2. **Nice to keep** (maps, mention highlighting, expanded roster modal).
+3. **Candidates to remove/simplify** (long-press score edit UX, some status/detail views, aggressive cache wipe behavior).
+
+If you share your priorities (e.g., “optimize for casual players” vs “admin-heavy ops”), I can turn this into a direct recommended cut list.

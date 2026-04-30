@@ -9,8 +9,6 @@ export interface User {
   nickname?: string | null;
   goals?: number;
   assists?: number;
-  createdYear: number;
-  createdAt: string;
   notificationPreference?: NotificationPreference;
 }
 
@@ -27,7 +25,6 @@ export interface TeamEvent {
   mapAddress?: string | null;
   opponent?: string | null;
   occasion?: string | null;
-  teamName: string;
   isNextUp?: boolean;
   score?: EventScore | null;
 }
