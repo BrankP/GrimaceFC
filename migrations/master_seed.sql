@@ -1,11 +1,25 @@
-PRAGMA foreign_keys = ON;
+PRAGMA foreign_keys = OFF;
+
+DROP TABLE IF EXISTS next_ref_state;
+DROP TABLE IF EXISTS next_ref_history;
+DROP TABLE IF EXISTS next_ref_passes;
+DROP TABLE IF EXISTS ref_roster;
+DROP TABLE IF EXISTS availability;
+DROP TABLE IF EXISTS lineups;
+DROP TABLE IF EXISTS messages;
+DROP TABLE IF EXISTS event_scores;
+DROP TABLE IF EXISTS push_notification_queue;
+DROP TABLE IF EXISTS push_subscriptions;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS users;
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   nickname TEXT,
   created_year INTEGER NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  notification_preference TEXT NOT NULL DEFAULT 'all_chats' CHECK(notification_preference IN ('all_chats','tagged_only','disabled'))
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -106,17 +120,7 @@ CREATE TABLE IF NOT EXISTS availability (
   created_at TEXT NOT NULL
 );
 
-DELETE FROM next_ref_state;
-DELETE FROM next_ref_history;
-DELETE FROM ref_roster;
-DELETE FROM availability;
-DELETE FROM lineups;
-DELETE FROM messages;
-DELETE FROM event_scores;
-DELETE FROM push_notification_queue;
-DELETE FROM push_subscriptions;
-DELETE FROM events;
-DELETE FROM users;
+PRAGMA foreign_keys = ON;
 
 INSERT OR REPLACE INTO users (id, name, nickname, created_year, created_at, notification_preference) VALUES
 ('usr-001', 'Brad Fox', NULL, 2026, '2026-01-01T00:00:00Z', 'all_chats'),
