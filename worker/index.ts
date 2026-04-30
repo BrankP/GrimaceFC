@@ -725,9 +725,7 @@ const ensureRefRosterSeed = async (env: Env) => {
 };
 
 const ensureGrimaceUser = async (env: Env) => {
-  await env.DB.prepare(
-    'INSERT INTO users (id, name, nickname) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO NOTHING',
-  )
+  await env.DB.prepare('INSERT INTO users (id, name, nickname) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO NOTHING')
     .bind(SYSTEM_USER_ID, 'Grimace', null)
     .run();
 };
