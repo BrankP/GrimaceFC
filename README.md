@@ -20,8 +20,6 @@ Stores player/user identity and notification preferences.
 | `id` | TEXT (PK) | Unique user identifier. |
 | `name` | TEXT | Full display name (e.g., first + last). |
 | `nickname` | TEXT (nullable) | Optional nickname shown in chat display names. |
-| `created_year` | INTEGER | Year user was created/added. |
-| `created_at` | TEXT | ISO timestamp when user row was created. |
 | `notification_preference` | TEXT | Push preference: `all_chats`, `tagged_only`, or `disabled`. |
 
 ### `events`
@@ -40,7 +38,6 @@ Stores all matches and sessions shown in Upcoming + related screens.
 | `map_address` | TEXT (nullable) | Address used for map embed if different from location label. |
 | `opponent` | TEXT (nullable) | Opponent name for games. |
 | `occasion` | TEXT (nullable) | Session or event descriptor (e.g., special sesh title). |
-| `team_name` | TEXT | Team name associated to event (currently Grimace FC). |
 | `is_next_up` | INTEGER | Flag to visually mark the “next up” event. |
 
 ### `ref_roster`
@@ -51,7 +48,6 @@ Ordered rotation list for next referee assignment flow.
 | `id` | TEXT (PK) | Unique roster slot id. |
 | `user_id` | TEXT | User occupying this slot in the rotation. |
 | `roster_order` | INTEGER (unique) | Absolute order in rotation list. |
-| `created_at` | TEXT | When roster slot was created. |
 
 ### `next_ref_state`
 Current active “Next Ref” workflow state for an event.
