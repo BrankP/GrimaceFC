@@ -1,5 +1,0 @@
--- No-op migration.
---
--- `map_address` already exists in `0001_init.sql` and in runtime schema bootstrapping.
--- Keeping this file as a no-op prevents duplicate-column failures when older
--- environments attempt to apply historical migrations.
