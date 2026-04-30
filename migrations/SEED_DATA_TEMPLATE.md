@@ -26,7 +26,7 @@ This worksheet now mirrors the current requested seed set.
 | usr-019 | Tom Jenkins |  | 2026 | 2026-01-01T00:00:00Z |
 | usr-020 | Zac Reyes |  | 2026 | 2026-01-01T00:00:00Z |
 
-## 2) `events` (15)
+## 2) `events` (21)
 | id      | event_type | date (ISO)           | day_of_week | home_away | beer_duty_user_id | ref_duty_user_id | location          | map_address          | opponent          | occasion                  | team_name  | is_next_up |
 | ------- | ---------- | -------------------- | ----------- | --------- | ----------------- | ---------------- | ----------------- | -------------------- | ----------------- | ------------------------- | ---------- | ---------: |
 | evt-001 | Game       | 2026-03-14T05:00:00Z | Saturday    | Home      |                   |                  | ABH United 2026   | Tristram Road Reserve | ABH United AL6A's | Trial Match               | Grimace FC |          0 |
