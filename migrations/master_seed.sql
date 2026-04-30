@@ -1,5 +1,111 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  nickname TEXT,
+  created_year INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id TEXT PRIMARY KEY,
+  event_type TEXT NOT NULL,
+  date TEXT NOT NULL,
+  day_of_week TEXT NOT NULL,
+  home_away TEXT,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
+  location TEXT NOT NULL,
+  map_address TEXT,
+  opponent TEXT,
+  occasion TEXT,
+  team_name TEXT NOT NULL,
+  is_next_up INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS ref_roster (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  roster_order INTEGER NOT NULL UNIQUE,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_state (
+  event_id TEXT PRIMARY KEY,
+  current_ref_slot_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('Pending Decision','Accepted')),
+  running_balance INTEGER NOT NULL DEFAULT 0,
+  accepted_at TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_history (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  referee_user_id TEXT NOT NULL,
+  final_balance INTEGER NOT NULL,
+  passed_json TEXT NOT NULL,
+  accepted_at TEXT,
+  completed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS event_scores (
+  event_id TEXT PRIMARY KEY,
+  grimace_score INTEGER NOT NULL,
+  opponent_score INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  endpoint TEXT NOT NULL,
+  p256dh_key TEXT NOT NULL,
+  auth_key TEXT NOT NULL,
+  expiration_time INTEGER,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS push_notification_queue (
+  id TEXT PRIMARY KEY,
+  endpoint TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS lineups (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  formation TEXT NOT NULL,
+  positions_json TEXT NOT NULL,
+  subs_json TEXT NOT NULL,
+  not_available_json TEXT NOT NULL,
+  beer_duty_user_id TEXT,
+  ref_duty_user_id TEXT,
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS availability (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('available','not_available')),
+  updated_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 DELETE FROM next_ref_state;
 DELETE FROM next_ref_history;
 DELETE FROM ref_roster;
