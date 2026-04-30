@@ -61,8 +61,8 @@ INSERT OR REPLACE INTO events (id, event_type, date, day_of_week, home_away, bee
 ('evt-021', 'Game', '2026-08-15T13:00:00Z', 'Saturday', 'Away', 'usr-005', NULL, 'Curl Curl', 'Adam Street Reserve', 'Curl Curl', 'Game', 'Grimace FC', 0);
 
 INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
-('refslot-001', 'usr-012', 0, '2026-01-01T00:00:00Z'),
-('refslot-002', 'usr-011', 1, '2026-01-01T00:00:00Z'),
+('refslot-001', 'usr-011', 0, '2026-01-01T00:00:00Z'),
+('refslot-002', 'usr-012', 1, '2026-01-01T00:00:00Z'),
 ('refslot-003', 'usr-004', 2, '2026-01-01T00:00:00Z'),
 ('refslot-004', 'usr-015', 3, '2026-01-01T00:00:00Z'),
 ('refslot-005', 'usr-018', 4, '2026-01-01T00:00:00Z'),
@@ -111,5 +111,12 @@ INSERT OR REPLACE INTO ref_roster (id, user_id, roster_order, created_at) VALUES
 INSERT OR REPLACE INTO next_ref_history (id, event_id, referee_user_id, final_balance, passed_json, accepted_at, completed_at) VALUES
 ('nrh-001', 'evt-003', 'usr-012', 0, '[]', '2026-04-11T05:00:00Z', '2026-04-11T05:00:00Z');
 
+INSERT OR REPLACE INTO event_scores (event_id, grimace_score, opponent_score, updated_at, created_at) VALUES
+('evt-001', 2, 2, '2026-03-14T07:00:00Z', '2026-03-14T07:00:00Z'),
+('evt-002', 2, 6, '2026-03-28T07:00:00Z', '2026-03-28T07:00:00Z'),
+('evt-003', 2, 2, '2026-04-11T07:00:00Z', '2026-04-11T07:00:00Z'),
+('evt-004', 3, 2, '2026-04-18T07:00:00Z', '2026-04-18T07:00:00Z'),
+('evt-005', 2, 2, '2026-04-22T07:00:00Z', '2026-04-22T07:00:00Z');
+
 -- Optional tables intentionally left empty in baseline seed:
--- messages, availability, next_ref_passes, push_subscriptions, push_notification_queue, event_scores, event_goal_details
+-- messages, availability, next_ref_passes, push_subscriptions, push_notification_queue, event_goal_details
