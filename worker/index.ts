@@ -757,6 +757,29 @@ const ensureGrimaceUser = async (env: Env) => {
     .run();
 };
 
+const ensurePushUniquenessConstraints = async (env: Env) => {
+  await env.DB.prepare(
+    `DELETE FROM push_subscriptions
+     WHERE rowid NOT IN (
+       SELECT MAX(rowid)
+       FROM push_subscriptions
+       GROUP BY user_id, endpoint
+     )`,
+  ).run();
+
+  await env.DB.prepare(
+    `DELETE FROM push_notification_queue
+     WHERE rowid NOT IN (
+       SELECT MAX(rowid)
+       FROM push_notification_queue
+       GROUP BY endpoint
+     )`,
+  ).run();
+
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_user_endpoint ON push_subscriptions(user_id, endpoint)').run();
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_queue_endpoint ON push_notification_queue(endpoint)').run();
+};
+
 const ensureSchema = async (env: Env) => {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
@@ -772,6 +795,7 @@ const ensureSchema = async (env: Env) => {
       await ensureDefaultDutyAssignments(env);
       await ensureRefRosterSeed(env);
       await ensureGrimaceUser(env);
+      await ensurePushUniquenessConstraints(env);
     })();
   }
   await schemaInitPromise;
