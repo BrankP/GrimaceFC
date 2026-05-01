@@ -335,6 +335,12 @@ const sendPushPing = async (env: Env, endpoint: string) => {
 };
 
 const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
+  console.error('push_flow_start', {
+    senderUserId: payload.senderUserId,
+    messagePreview: payload.messageText.slice(0, 160),
+    hasAtSymbol: payload.messageText.includes('@'),
+  });
+
   const vapid = getVapidConfig(env);
   if (!vapid) {
     console.error('push_flow_skipped_missing_vapid', { senderUserId: payload.senderUserId });
@@ -355,6 +361,13 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     const taggedCandidates = await env.DB.prepare("SELECT id, name FROM users WHERE notification_preference = 'tagged_only'").all<{ id: string; name: string }>();
     taggedNames = parseTaggedNamesFromCandidates(payload.messageText, taggedCandidates.results.map((user) => user.name));
 
+    console.error('push_flow_tag_parse', {
+      senderUserId: payload.senderUserId,
+      taggedOnlyCandidateCount: taggedCandidates.results.length,
+      taggedOnlyCandidateIds: taggedCandidates.results.map((user) => user.id),
+      taggedNames,
+    });
+
     if (taggedNames.length) {
       taggedOnlyRecipientIds = taggedCandidates.results
         .filter((user) => user.id !== payload.senderUserId && taggedNames.includes(normalizeMentionName(user.name)))
@@ -367,7 +380,35 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     }
   }
 
-  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedOnlyRecipientIds]));
+  const senderNotificationPreference = await env.DB.prepare('SELECT notification_preference FROM users WHERE id = ?1 LIMIT 1')
+    .bind(payload.senderUserId)
+    .first<{ notification_preference: string }>();
+  const senderAllowsPush = (senderNotificationPreference?.notification_preference ?? 'all_chats') !== 'disabled';
+  const shouldNotifySenderForTaggedMessage = payload.messageText.includes('@') && senderAllowsPush;
+
+  const recipientIds = Array.from(
+    new Set([
+      ...allChatRecipientIds,
+      ...taggedOnlyRecipientIds,
+      ...(shouldNotifySenderForTaggedMessage ? [payload.senderUserId] : []),
+    ]),
+  );
+  const senderSubscriptionCount = await env.DB.prepare('SELECT COUNT(1) AS count FROM push_subscriptions WHERE user_id = ?1')
+    .bind(payload.senderUserId)
+    .first<{ count: number }>();
+
+  console.error('push_flow_recipient_summary', {
+    senderUserId: payload.senderUserId,
+    senderIncludedInRecipients: recipientIds.includes(payload.senderUserId),
+    senderNotificationPreference: senderNotificationPreference?.notification_preference ?? 'all_chats',
+    shouldNotifySenderForTaggedMessage,
+    senderSubscriptionCount: senderSubscriptionCount?.count ?? 0,
+    allChatRecipientIds,
+    taggedOnlyRecipientIds,
+    recipientIds,
+    taggedNames,
+  });
+
   if (!recipientIds.length) {
     console.error('push_flow_no_recipients', {
       senderUserId: payload.senderUserId,
@@ -730,6 +771,29 @@ const ensureGrimaceUser = async (env: Env) => {
     .run();
 };
 
+const ensurePushUniquenessConstraints = async (env: Env) => {
+  await env.DB.prepare(
+    `DELETE FROM push_subscriptions
+     WHERE rowid NOT IN (
+       SELECT MAX(rowid)
+       FROM push_subscriptions
+       GROUP BY user_id, endpoint
+     )`,
+  ).run();
+
+  await env.DB.prepare(
+    `DELETE FROM push_notification_queue
+     WHERE rowid NOT IN (
+       SELECT MAX(rowid)
+       FROM push_notification_queue
+       GROUP BY endpoint
+     )`,
+  ).run();
+
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_user_endpoint ON push_subscriptions(user_id, endpoint)').run();
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_queue_endpoint ON push_notification_queue(endpoint)').run();
+};
+
 const ensureSchema = async (env: Env) => {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
@@ -745,6 +809,7 @@ const ensureSchema = async (env: Env) => {
       await ensureDefaultDutyAssignments(env);
       await ensureRefRosterSeed(env);
       await ensureGrimaceUser(env);
+      await ensurePushUniquenessConstraints(env);
     })();
   }
   await schemaInitPromise;
