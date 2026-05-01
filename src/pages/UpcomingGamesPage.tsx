@@ -81,6 +81,19 @@ export function UpcomingGamesPage() {
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
   }, []);
 
+
+  useEffect(() => {
+    if (!expandedId) return;
+    const expandedCard = eventCardRefs.current[expandedId];
+    if (!expandedCard) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      expandedCard.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [expandedId]);
+
   useEffect(() => {
     if (!nextGameId) return;
     const nextGameRow = eventCardRefs.current[nextGameId];
