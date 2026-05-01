@@ -380,7 +380,19 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     }
   }
 
-  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedOnlyRecipientIds]));
+  const senderNotificationPreference = await env.DB.prepare('SELECT notification_preference FROM users WHERE id = ?1 LIMIT 1')
+    .bind(payload.senderUserId)
+    .first<{ notification_preference: string }>();
+  const senderAllowsPush = (senderNotificationPreference?.notification_preference ?? 'all_chats') !== 'disabled';
+  const shouldNotifySenderForTaggedMessage = payload.messageText.includes('@') && senderAllowsPush;
+
+  const recipientIds = Array.from(
+    new Set([
+      ...allChatRecipientIds,
+      ...taggedOnlyRecipientIds,
+      ...(shouldNotifySenderForTaggedMessage ? [payload.senderUserId] : []),
+    ]),
+  );
   const senderSubscriptionCount = await env.DB.prepare('SELECT COUNT(1) AS count FROM push_subscriptions WHERE user_id = ?1')
     .bind(payload.senderUserId)
     .first<{ count: number }>();
@@ -388,6 +400,8 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
   console.error('push_flow_recipient_summary', {
     senderUserId: payload.senderUserId,
     senderIncludedInRecipients: recipientIds.includes(payload.senderUserId),
+    senderNotificationPreference: senderNotificationPreference?.notification_preference ?? 'all_chats',
+    shouldNotifySenderForTaggedMessage,
     senderSubscriptionCount: senderSubscriptionCount?.count ?? 0,
     allChatRecipientIds,
     taggedOnlyRecipientIds,
