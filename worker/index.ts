@@ -1,6 +1,6 @@
 export interface Env {
   DB: D1Database;
-  ASSETS: Fetcher;
+  ASSETS?: Fetcher;
   ADMIN_PASSCODE?: string;
   VIEW_PASSCODE?: string;
   TEAM_PASSCODE?: string;
@@ -18,7 +18,7 @@ type WebPushSubscription = {
     auth: string;
   };
 };
-type PendingPushNotification = { title: string; body: string; url: string };
+type PendingPushNotification = { title: string; body: string; url: string; tag?: string };
 
 const rateStore = new Map<string, RateEntry>();
 
@@ -380,29 +380,13 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     }
   }
 
-  const senderNotificationPreference = await env.DB.prepare('SELECT notification_preference FROM users WHERE id = ?1 LIMIT 1')
-    .bind(payload.senderUserId)
-    .first<{ notification_preference: string }>();
   const senderSubscriptionCount = await env.DB.prepare('SELECT COUNT(1) AS count FROM push_subscriptions WHERE user_id = ?1')
     .bind(payload.senderUserId)
     .first<{ count: number }>();
-  const senderAllowsPush = (senderNotificationPreference?.notification_preference ?? 'all_chats') !== 'disabled';
-  const senderHasSubscription = Number(senderSubscriptionCount?.count ?? 0) > 0;
-  const shouldNotifySenderForTaggedMessage = payload.messageText.includes('@') && senderAllowsPush && senderHasSubscription;
-
-  const recipientIds = Array.from(
-    new Set([
-      ...allChatRecipientIds,
-      ...taggedOnlyRecipientIds,
-      ...(shouldNotifySenderForTaggedMessage ? [payload.senderUserId] : []),
-    ]),
-  );
+  const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedOnlyRecipientIds]));
   console.error('push_flow_recipient_summary', {
     senderUserId: payload.senderUserId,
     senderIncludedInRecipients: recipientIds.includes(payload.senderUserId),
-    senderNotificationPreference: senderNotificationPreference?.notification_preference ?? 'all_chats',
-    senderHasSubscription,
-    shouldNotifySenderForTaggedMessage,
     senderSubscriptionCount: senderSubscriptionCount?.count ?? 0,
     allChatRecipientIds,
     taggedOnlyRecipientIds,
@@ -441,10 +425,15 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     subscriptionCount: subscriptions.results.length,
   });
 
+  const senderNameRow = await env.DB.prepare('SELECT name FROM users WHERE id = ?1 LIMIT 1').bind(payload.senderUserId).first<{ name: string }>();
+  const senderLabel = senderNameRow?.name?.trim() || 'Teammate';
+  const compactMessage = payload.messageText.replace(/\s+/g, ' ').trim();
+  const truncatedMessage = compactMessage.length > 120 ? `${compactMessage.slice(0, 117)}...` : compactMessage;
   const notificationPayload: PendingPushNotification = {
-    title: 'Grimace FC: New chat message',
-    body: payload.messageText,
+    title: 'New message in chat',
+    body: `${senderLabel}: ${truncatedMessage}`,
     url: '/chat',
+    tag: 'Grimace FC',
   };
 
   for (const subscription of subscriptions.results) {
@@ -1761,6 +1750,7 @@ export default {
 
     const url = new URL(request.url);
     if (url.pathname.startsWith('/api/')) return handleApi(request, env);
-    return env.ASSETS.fetch(request);
+    if (env.ASSETS) return env.ASSETS.fetch(request);
+    return errorResponse('Asset binding is not configured', 404, { 'Cache-Control': 'no-store' });
   },
 };

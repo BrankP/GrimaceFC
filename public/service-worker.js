@@ -1,7 +1,7 @@
 self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
-      let payload = { title: 'Grimace FC: You were tagged in chat', body: 'Open chat to view the message.', url: '/chat' };
+      let payload = { title: 'New message in chat', body: 'Open chat to view the message.', url: '/chat', tag: 'Grimace FC' };
 
       if (event.data) {
         try {
@@ -20,10 +20,19 @@ self.addEventListener('push', (event) => {
         }
       }
 
-      await self.registration.showNotification(payload.title, {
+      const existing = await self.registration.getNotifications({ tag: payload.tag || 'Grimace FC' });
+      const currentTitle = existing[0]?.title || '';
+      const match = currentTitle.match(/^(\d+)\s+new messages in chat$/i);
+      const previousCount = match ? Number(match[1]) : existing.length ? 1 : 0;
+      const nextCount = previousCount + 1;
+      const computedTitle = nextCount > 1 ? `${nextCount} new messages in chat` : 'New message in chat';
+
+      await self.registration.showNotification(computedTitle, {
         body: payload.body,
         icon: '/favicon.ico',
         badge: '/favicon.ico',
+        tag: payload.tag || 'Grimace FC',
+        renotify: false,
         data: { url: payload.url || '/chat' },
       });
     })(),
