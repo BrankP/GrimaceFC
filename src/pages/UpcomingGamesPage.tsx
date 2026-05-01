@@ -166,6 +166,7 @@ export function UpcomingGamesPage() {
                   </div>
 
                   <div className="sleek-event-main">
+                    {event.id === nextGameId && <p className="next-game-pill">Next Game</p>}
                     <p className="sleek-event-line">
                       <span>{formatEventTime(event.date, event.eventType)}</span>
                     </p>

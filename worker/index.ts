@@ -117,7 +117,7 @@ const maybePostAttendanceReminders = async (env: Env) => {
     if (existing) continue;
 
     const subject = event.event_type === 'Game' ? `${event.opponent ?? 'upcoming game'}` : `${event.occasion ?? 'upcoming session'}`;
-    const names = missing.results.map((row) => row.name).join(', ');
+    const names = missing.results.map((row) => `@${row.name}`).join(', ');
     const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days). ${marker}`;
 
     await insertSystemMessage(env, text);
@@ -1105,6 +1105,7 @@ async function handleApi(request: Request, env: Env) {
         LEFT JOIN next_ref_state ON next_ref_state.event_id = events.id
         LEFT JOIN ref_roster ON ref_roster.id = next_ref_state.current_ref_slot_id
         WHERE events.event_type = 'Game'
+          AND datetime(events.date) >= datetime('now', 'start of day')
         ORDER BY events.date ASC
         LIMIT 1`,
       ).first();
