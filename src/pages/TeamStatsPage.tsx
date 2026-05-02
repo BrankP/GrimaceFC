@@ -125,17 +125,8 @@ export function TeamStatsPage() {
   );
 
   const seasonRecord = useMemo<SeasonRecord>(() => {
-    const now = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), 3, 1, 0, 0, 0, 0));
-    const end = new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59, 999));
-
     const completedGames = (data?.events ?? [])
       .filter((event) => event.eventType === 'Game')
-      .filter((event) => {
-        const eventDate = new Date(event.date);
-        if (Number.isNaN(eventDate.getTime())) return false;
-        return eventDate >= start && eventDate <= end;
-      })
       .filter((event) => event.score !== null && event.score !== undefined)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
