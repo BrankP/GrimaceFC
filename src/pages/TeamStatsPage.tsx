@@ -150,9 +150,6 @@ export function TeamStatsPage() {
     });
 
     const lastFive: LastFiveResult[] = allResults.slice(-5);
-    while (lastFive.length < 5) {
-      lastFive.unshift(null);
-    }
 
     return {
       mp: completedGames.length,
