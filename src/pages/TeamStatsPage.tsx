@@ -212,28 +212,22 @@ export function TeamStatsPage() {
       <h2>Team Stats</h2>
 
       <article className="card team-season-record-card">
-        <h3>Season Record</h3>
-        <div className="team-season-table" role="table" aria-label="Season record summary">
+        <div className="team-season-grid" role="table" aria-label="Season record summary">
           {[
-            { label: 'MP', value: seasonRecord.mp },
-            { label: 'W', value: seasonRecord.w },
-            { label: 'D', value: seasonRecord.d },
-            { label: 'L', value: seasonRecord.l },
-            { label: 'GF', value: seasonRecord.gf },
-            { label: 'GA', value: seasonRecord.ga },
-            { label: 'GD', value: seasonRecord.gd },
-            { label: 'Pts', value: seasonRecord.pts },
-          ].map((item) => (
-            <div key={item.label} className="team-season-cell" role="row">
-              <p className="team-season-cell-label">{item.label}</p>
-              <p className="team-season-cell-value">{item.value}</p>
-            </div>
+            'MP', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts', 'Last 5',
+          ].map((label) => (
+            <p key={`season-label-${label}`} className={`team-season-col-label ${label === 'Pts' ? 'is-points' : ''}`} role="columnheader">{label}</p>
           ))}
-        </div>
 
-        <div className="team-last-five-block">
-          <p className="team-last-five-title">Last 5</p>
-          <div className="team-last-five-row" aria-label="Last five results with most recent on the right">
+          <p className="team-season-col-value" role="cell">{seasonRecord.mp}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.w}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.d}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.l}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.gf}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.ga}</p>
+          <p className="team-season-col-value" role="cell">{seasonRecord.gd}</p>
+          <p className="team-season-col-value is-points" role="cell">{seasonRecord.pts}</p>
+          <div className="team-last-five-row" role="cell" aria-label="Last five results with most recent on the right">
             {seasonRecord.lastFive.map((result, index) => {
               const isMostRecent = index === seasonRecord.lastFive.length - 1;
               const tone = result === 'W' ? 'is-win' : result === 'L' ? 'is-loss' : result === 'D' ? 'is-draw' : 'is-empty';
