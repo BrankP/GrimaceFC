@@ -11,6 +11,20 @@ type RankedPlayer = {
   goalContributions: number;
 };
 
+type LastFiveResult = 'W' | 'D' | 'L' | null;
+
+type SeasonRecord = {
+  mp: number;
+  w: number;
+  d: number;
+  l: number;
+  gf: number;
+  ga: number;
+  gd: number;
+  pts: number;
+  lastFive: LastFiveResult[];
+};
+
 const toStatValue = (value: number | null | undefined) => {
   const normalized = Number(value ?? 0);
   if (!Number.isFinite(normalized) || normalized < 0) return 0;
@@ -31,6 +45,12 @@ const rankToneClass = (rankIndex: number) => {
   if (rankIndex === 1) return 'is-silver';
   if (rankIndex === 2) return 'is-bronze';
   return '';
+};
+
+const resultTypeForScores = (grimaceScore: number, opponentScore: number): Exclude<LastFiveResult, null> => {
+  if (grimaceScore > opponentScore) return 'W';
+  if (grimaceScore < opponentScore) return 'L';
+  return 'D';
 };
 
 function RankedList({
@@ -104,6 +124,58 @@ export function TeamStatsPage() {
     [data?.users],
   );
 
+  const seasonRecord = useMemo<SeasonRecord>(() => {
+    const now = new Date();
+    const start = new Date(Date.UTC(now.getUTCFullYear(), 3, 1, 0, 0, 0, 0));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), 11, 31, 23, 59, 59, 999));
+
+    const completedGames = (data?.events ?? [])
+      .filter((event) => event.eventType === 'Game')
+      .filter((event) => {
+        const eventDate = new Date(event.date);
+        if (Number.isNaN(eventDate.getTime())) return false;
+        return eventDate >= start && eventDate <= end;
+      })
+      .filter((event) => event.score !== null && event.score !== undefined)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    let w = 0;
+    let d = 0;
+    let l = 0;
+    let gf = 0;
+    let ga = 0;
+    const allResults: Exclude<LastFiveResult, null>[] = [];
+
+    completedGames.forEach((event) => {
+      const grimaceScore = Number(event.score?.grimaceScore ?? 0);
+      const opponentScore = Number(event.score?.opponentScore ?? 0);
+      gf += grimaceScore;
+      ga += opponentScore;
+      const result = resultTypeForScores(grimaceScore, opponentScore);
+      allResults.push(result);
+      if (result === 'W') w += 1;
+      if (result === 'D') d += 1;
+      if (result === 'L') l += 1;
+    });
+
+    const lastFive: LastFiveResult[] = allResults.slice(-5);
+    while (lastFive.length < 5) {
+      lastFive.unshift(null);
+    }
+
+    return {
+      mp: completedGames.length,
+      w,
+      d,
+      l,
+      gf,
+      ga,
+      gd: gf - ga,
+      pts: (w * 3) + d,
+      lastFive,
+    };
+  }, [data?.events]);
+
   const totals = useMemo(() => {
     const totalGoals = players.reduce((sum, player) => sum + player.goals, 0);
     const totalAssists = players.reduce((sum, player) => sum + player.assists, 0);
@@ -138,6 +210,43 @@ export function TeamStatsPage() {
   return (
     <section className="team-stats-page">
       <h2>Team Stats</h2>
+
+      <article className="card team-season-record-card">
+        <h3>Season Record</h3>
+        <div className="team-season-table" role="table" aria-label="Season record summary">
+          {[
+            { label: 'MP', value: seasonRecord.mp },
+            { label: 'W', value: seasonRecord.w },
+            { label: 'D', value: seasonRecord.d },
+            { label: 'L', value: seasonRecord.l },
+            { label: 'GF', value: seasonRecord.gf },
+            { label: 'GA', value: seasonRecord.ga },
+            { label: 'GD', value: seasonRecord.gd },
+            { label: 'Pts', value: seasonRecord.pts },
+          ].map((item) => (
+            <div key={item.label} className="team-season-cell" role="row">
+              <p className="team-season-cell-label">{item.label}</p>
+              <p className="team-season-cell-value">{item.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="team-last-five-block">
+          <p className="team-last-five-title">Last 5</p>
+          <div className="team-last-five-row" aria-label="Last five results with most recent on the right">
+            {seasonRecord.lastFive.map((result, index) => {
+              const isMostRecent = index === seasonRecord.lastFive.length - 1;
+              const tone = result === 'W' ? 'is-win' : result === 'L' ? 'is-loss' : result === 'D' ? 'is-draw' : 'is-empty';
+              const symbol = result === 'W' ? '✓' : result === 'L' ? '✕' : '–';
+              return (
+                <span key={`last-five-${index}`} className={`team-last-five-dot ${tone} ${isMostRecent ? 'is-most-recent' : ''}`} aria-label={result ?? 'No result'}>
+                  {symbol}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      </article>
 
       <div className="team-summary-grid">
         <article className="card team-summary-card">
