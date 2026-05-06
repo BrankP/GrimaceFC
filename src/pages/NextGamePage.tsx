@@ -19,7 +19,7 @@ import { getNextGameOnOrAfterToday } from '../utils/events';
 
 type DropTarget = `position:${string}` | 'subs' | 'notAvailable' | 'unknowns';
 type DragDimension = 'primary';
-const SYSTEM_USER_ID = 'grimace-bot';
+const HIDDEN_LINEUP_USER_IDS = new Set(['grimace-bot', 'usr-01dfb2ff', 'usr-74f46e60', 'usr-ab87aac4']);
 
 const buildDragId = (dimension: DragDimension, source: string, playerId: string) => `${dimension}|${source}|${playerId}`;
 
@@ -123,7 +123,7 @@ export function NextGamePage() {
   );
 
   const nextGame = useMemo(() => getNextGameOnOrAfterToday(store.events), [store.events]);
-  const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
+  const playerUsers = useMemo(() => store.users.filter((user) => !HIDDEN_LINEUP_USER_IDS.has(user.id)), [store.users]);
 
   const computedLineup = useMemo<Lineup | null>(() => {
     if (!nextGame) return null;
