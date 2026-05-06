@@ -1,5 +1,6 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../App';
+import type { Message } from '../types/models';
 
 const formatDateHeading = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(isoDate));
@@ -7,8 +8,26 @@ const formatDateHeading = (isoDate: string) =>
 const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
+const EMOJI_OPTIONS = [
+  '😀', '😃', '😄', '😁', '😆', '😂', '🤣', '😊', '😍', '😘', '😎', '🤩',
+  '🥳', '😬', '😅', '😇', '🙂', '🙃', '😉', '😌', '😋', '🤪', '🤨', '🧐',
+  '🤓', '😤', '😢', '😭', '😡', '🤬', '🤯', '🥶', '😱', '😴', '🤢', '🤮',
+  '👍', '👎', '👏', '🙌', '💪', '🙏', '🤝', '👊', '✌️', '🤞', '👀', '🧠',
+  '❤️', '💜', '💙', '💚', '💛', '🧡', '🔥', '💯', '⭐', '⚽', '🏆', '🍻',
+];
+
 export function ChatPage() {
-  const { data, addMessage, getDisplayName, saveNickname, canWrite } = useAppState();
+  const {
+    data,
+    addMessage,
+    editMessage,
+    deleteMessage,
+    toggleMessageReaction,
+    getDisplayName,
+    saveNickname,
+    currentUser,
+    canWrite,
+  } = useAppState();
   const store = data!;
   const [text, setText] = useState('');
   const [mentionQuery, setMentionQuery] = useState('');
@@ -16,13 +35,27 @@ export function ChatPage() {
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
+  const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
+  const [actionMessageId, setActionMessageId] = useState<string | null>(null);
+  const [detailsMessageId, setDetailsMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState('');
+  const longPressTimer = useRef<number | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messages = store.messages;
+  const selectedNicknameUserName = editingUserId ? getDisplayName(editingUserId) : '';
+  const getReactionUserNames = (reaction: Message['reactions'][number]) => reaction.users.map((user) => getDisplayName(user.id)).join(', ');
+  const actionMessage = actionMessageId ? messages.find((message) => message.id === actionMessageId) ?? null : null;
+  const detailsMessage = detailsMessageId ? messages.find((message) => message.id === detailsMessageId) ?? null : null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
+
+  useEffect(() => () => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+  }, []);
 
   const groupedMessages = useMemo(() => {
     const groups: Array<{ date: string; messages: typeof messages }> = [];
@@ -117,31 +150,169 @@ export function ChatPage() {
     setActiveMentionIndex(0);
   };
 
+  const startLongPress = (messageId: string) => () => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
+    longPressTimer.current = window.setTimeout(() => {
+      setActionMessageId(messageId);
+      setEmojiPickerMessageId(null);
+    }, 550);
+  };
+
+  const clearLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const openEditMessage = (message: Message) => {
+    setEditingMessageId(message.id);
+    setEditingMessageText(message.text);
+    setActionMessageId(null);
+  };
+
+  const submitEditedMessage = (event: FormEvent) => {
+    event.preventDefault();
+    if (!editingMessageId || !editingMessageText.trim()) return;
+    void editMessage(editingMessageId, editingMessageText.trim());
+    setEditingMessageId(null);
+    setEditingMessageText('');
+  };
+
+  const ReactionDetails = ({ message }: { message: Message }) => (
+    <div className="reaction-details-list">
+      <h4>Reaction details</h4>
+      {message.reactions.length ? (
+        message.reactions.map((reaction) => (
+          <p key={reaction.emoji} className="reaction-detail-row">
+            <span className="reaction-detail-emoji">{reaction.emoji}</span>
+            <span>{getReactionUserNames(reaction)}</span>
+          </p>
+        ))
+      ) : (
+        <p className="muted">No reactions yet.</p>
+      )}
+    </div>
+  );
+
   return (
     <section className="chat-page">
       <div className="chat-thread">
         {groupedMessages.map((group) => (
           <div key={group.date} className="chat-day-group">
             <p className="chat-date-divider">{formatDateHeading(group.messages[0].createdAt)}</p>
-            {group.messages.map((message) => (
-              <article className="bubble modern-bubble" key={message.id}>
-                <div className="chat-meta-row">
-                  <button
-                    type="button"
-                    className="name-btn"
-                    onClick={() => {
-                      if (!canWrite) return;
-                      setEditingUserId(message.userId);
-                      setNickname(getDisplayName(message.userId));
-                    }}
-                  >
-                    {getDisplayName(message.userId)}
-                  </button>
-                  <small>{formatDateTime(message.createdAt)}</small>
-                </div>
-                <p>{renderTaggedText(message.text)}</p>
-              </article>
-            ))}
+            {group.messages.map((message) => {
+              const isComposer = currentUser?.id === message.userId;
+              const isPickerOpen = emojiPickerMessageId === message.id;
+              return (
+                <article
+                  className="bubble modern-bubble"
+                  key={message.id}
+                  onPointerDown={startLongPress(message.id)}
+                  onPointerUp={clearLongPress}
+                  onPointerCancel={clearLongPress}
+                  onPointerLeave={clearLongPress}
+                >
+                  <div className="chat-meta-row">
+                    <button
+                      type="button"
+                      className="name-btn"
+                      onClick={() => {
+                        if (!canWrite) return;
+                        setEditingUserId(message.userId);
+                        setNickname(getDisplayName(message.userId));
+                      }}
+                    >
+                      {getDisplayName(message.userId)}
+                    </button>
+                    <small>{formatDateTime(message.createdAt)}</small>
+                  </div>
+                  <p>{renderTaggedText(message.text)}</p>
+                  {message.editedAt && <small className="edited-label">edited</small>}
+                  <div className="message-reaction-row">
+                    <button
+                      type="button"
+                      className="reaction-add-btn"
+                      aria-label={canWrite ? 'Add reaction' : 'Visitors cannot react'}
+                      disabled={!canWrite}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (!canWrite) return;
+                        setEmojiPickerMessageId((current) => (current === message.id ? null : message.id));
+                      }}
+                    >
+                      ☺
+                    </button>
+                    {message.reactions.map((reaction) => (
+                      <button
+                        type="button"
+                        className={`reaction-tally${reaction.users.some((user) => user.id === currentUser?.id) ? ' reacted-by-me' : ''}`}
+                        key={reaction.emoji}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDetailsMessageId(message.id);
+                        }}
+                        onDoubleClick={(event) => {
+                          event.stopPropagation();
+                          setDetailsMessageId(message.id);
+                        }}
+                        title={getReactionUserNames(reaction)}
+                      >
+                        <span>{reaction.emoji}</span>
+                        <span>{reaction.count}</span>
+                      </button>
+                    ))}
+                    {message.reactions.length > 0 && (
+                      <button
+                        type="button"
+                        className="reaction-details-btn"
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setDetailsMessageId(message.id);
+                        }}
+                      >
+                        Details
+                      </button>
+                    )}
+                  </div>
+                  {isPickerOpen && canWrite && (
+                    <div className="emoji-picker" onPointerDown={(event) => event.stopPropagation()}>
+                      {EMOJI_OPTIONS.map((emoji) => (
+                        <button
+                          type="button"
+                          className="emoji-picker-option"
+                          key={emoji}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void toggleMessageReaction(message.id, emoji);
+                            setEmojiPickerMessageId(null);
+                          }}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {isComposer && (
+                    <button
+                      type="button"
+                      className="message-more-btn"
+                      aria-label="Open message actions"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setActionMessageId(message.id);
+                      }}
+                    >
+                      ⋯
+                    </button>
+                  )}
+                </article>
+              );
+            })}
           </div>
         ))}
         <div ref={bottomRef} />
@@ -229,11 +400,67 @@ export function ChatPage() {
               setEditingUserId(null);
             }}
           >
-            <h3>Edit nickname</h3>
+            <h3>Edit nickname for {selectedNicknameUserName}</h3>
             <input value={nickname} onChange={(e) => setNickname(e.target.value)} required />
             <div className="row">
               <button type="submit">Save</button>
               <button type="button" className="secondary" onClick={() => setEditingUserId(null)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {actionMessage && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setActionMessageId(null)}>
+          <div className="card modal" onClick={(event) => event.stopPropagation()}>
+            <h3>Message actions</h3>
+            <ReactionDetails message={actionMessage} />
+            {currentUser?.id === actionMessage.userId && (
+              <div className="stack">
+                <button type="button" onClick={() => openEditMessage(actionMessage)}>Edit message</button>
+                <button
+                  type="button"
+                  className="secondary danger-action full-width"
+                  onClick={() => {
+                    void deleteMessage(actionMessage.id);
+                    setActionMessageId(null);
+                  }}
+                >
+                  Delete message
+                </button>
+              </div>
+            )}
+            <button type="button" className="secondary" onClick={() => setActionMessageId(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {detailsMessage && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setDetailsMessageId(null)}>
+          <div className="card modal" onClick={(event) => event.stopPropagation()}>
+            <ReactionDetails message={detailsMessage} />
+            <button type="button" className="secondary" onClick={() => setDetailsMessageId(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
+      {editingMessageId && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <form className="card modal" onSubmit={submitEditedMessage}>
+            <h3>Edit message</h3>
+            <textarea className="message-edit-input" value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} required />
+            <div className="row">
+              <button type="submit">Save</button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => {
+                  setEditingMessageId(null);
+                  setEditingMessageText('');
+                }}
+              >
+                Cancel
+              </button>
             </div>
           </form>
         </div>
