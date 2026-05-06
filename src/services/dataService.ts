@@ -82,6 +82,8 @@ export const passNextRef = (payload: { userId: string; eventId: string }) =>
   api<NextRefState>('/next-ref/pass', { method: 'POST', body: JSON.stringify(payload) });
 export const acceptNextRef = (payload: { userId: string; eventId: string }) =>
   api<NextRefState>('/next-ref/accept', { method: 'POST', body: JSON.stringify(payload) });
+export const skipNextRef = (payload: { eventId: string }) =>
+  api<NextRefState>('/next-ref/skip', { method: 'POST', body: JSON.stringify(payload) });
 export const completeNextRef = (payload: { eventId: string }) =>
   api<NextRefState>('/next-ref/complete', { method: 'POST', body: JSON.stringify(payload) });
 export const getNextRefHistory = () => api<NextRefHistoryEntry[]>('/next-ref/history');

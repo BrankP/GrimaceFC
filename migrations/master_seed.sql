@@ -2,6 +2,7 @@ PRAGMA foreign_keys = OFF;
 
 DROP TABLE IF EXISTS next_ref_state;
 DROP TABLE IF EXISTS next_ref_history;
+DROP TABLE IF EXISTS next_ref_skips;
 DROP TABLE IF EXISTS next_ref_passes;
 DROP TABLE IF EXISTS ref_roster;
 DROP TABLE IF EXISTS availability;
@@ -50,6 +51,21 @@ CREATE TABLE IF NOT EXISTS next_ref_state (
   accepted_at TEXT,
   updated_at TEXT NOT NULL,
   created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_passes (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  passed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS next_ref_skips (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL,
+  ref_slot_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  skipped_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS next_ref_history (
