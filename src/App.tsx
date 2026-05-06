@@ -212,7 +212,9 @@ export default function App() {
       return;
     }
 
+    console.info('[push] permission_request_start', { userId: currentUserId, currentPermission: Notification.permission, at: new Date().toISOString() });
     const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    console.info('[push] permission_request_result', { userId: currentUserId, permission, at: new Date().toISOString() });
     if (permission === 'denied') {
       setSettingsStatus('Notifications are blocked in your browser. Enable them in site settings to receive alerts.');
       return;
@@ -225,7 +227,7 @@ export default function App() {
     const result = await syncPushSubscription(currentUserId);
     if (!result.ok) {
       setPushFailure(result.reason, result.detail);
-      setSettingsStatus(pushStatusLabel);
+      setSettingsStatus(result.detail ?? `Could not enable notifications: ${result.reason}`);
       return;
     }
 
@@ -534,7 +536,8 @@ export default function App() {
                 {([
                   { value: 'all_chats', title: 'All messages', help: 'Get notified for every chat message' },
                   { value: 'tagged_only', title: 'Mentions only', help: 'Only when someone tags you' },
-                                  ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
+                  { value: 'disabled', title: 'Disabled', help: 'Do not send push notifications to this device' },
+                ] as Array<{ value: NotificationPreference; title: string; help: string }>).map((option) => (
                   <button
                     key={option.value}
                     type="button"
@@ -551,6 +554,7 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              <p className="muted">{pushStatusLabel}</p>
               <p className="muted" style={{ minHeight: 20 }}>{settingsStatus}</p>
               <div className="settings-actions">
                 <div className="row">

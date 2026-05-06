@@ -55,7 +55,16 @@ export const toggleReaction = (payload: { messageId: string; userId: string; emo
 
 export const getVapidPublicKey = () => api<{ publicKey: string | null }>('/push/vapid-public-key');
 
-export const savePushSubscription = (payload: { userId: string; subscription: PushSubscriptionJSON }) =>
+export const savePushSubscription = (payload: {
+  userId: string;
+  subscription: PushSubscriptionJSON;
+  metadata?: {
+    userAgent?: string;
+    deviceLabel?: string;
+    standalone?: boolean;
+    notificationPermission?: NotificationPermission;
+  };
+}) =>
   api<{ ok: true }>('/push/subscription', { method: 'POST', body: JSON.stringify(payload) });
 
 export const deletePushSubscription = (payload: { userId: string; endpoint: string }) =>
