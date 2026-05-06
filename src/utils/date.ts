@@ -1,4 +1,4 @@
-const parseDisplayDate = (isoDate: string) => {
+export const parseDisplayDate = (isoDate: string) => {
   // Event payloads currently store team-local kickoff times with a trailing `Z`.
   // Stripping the suffix preserves the intended wall-clock time for display.
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(isoDate)) {
@@ -29,3 +29,15 @@ export const formatDayAndMonth = (isoDate: string) =>
 
 export const formatDayOfMonth = (isoDate: string) =>
   formatInBrowserTimeZone(isoDate, { day: 'numeric' });
+
+export const getDisplayDateDayStartMs = (isoDate: string) => {
+  const displayDate = parseDisplayDate(isoDate);
+  displayDate.setHours(0, 0, 0, 0);
+  return displayDate.getTime();
+};
+
+export const getTodayStartMs = (today = new Date()) => {
+  const startOfToday = new Date(today);
+  startOfToday.setHours(0, 0, 0, 0);
+  return startOfToday.getTime();
+};

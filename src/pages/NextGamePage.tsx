@@ -15,6 +15,7 @@ import { useAppState } from '../App';
 import { FORMATION_433, POSITION_LAYOUT } from '../constants/formation';
 import type { Lineup } from '../types/models';
 import { formatLocalDate, getBrowserTimeZone } from '../utils/date';
+import { getNextGameOnOrAfterToday } from '../utils/events';
 
 type DropTarget = `position:${string}` | 'subs' | 'notAvailable' | 'unknowns';
 type DragDimension = 'primary';
@@ -121,16 +122,7 @@ export function NextGamePage() {
     }),
   );
 
-  const nextGame = useMemo(() => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-
-    const upcomingGames = [...store.events]
-      .filter((event) => event.eventType === 'Game' && new Date(event.date).getTime() >= now.getTime())
-      .sort((a, b) => +new Date(a.date) - +new Date(b.date));
-
-    return upcomingGames[0] ?? null;
-  }, [store.events]);
+  const nextGame = useMemo(() => getNextGameOnOrAfterToday(store.events), [store.events]);
   const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const computedLineup = useMemo<Lineup | null>(() => {

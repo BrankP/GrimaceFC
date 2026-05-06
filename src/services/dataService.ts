@@ -1,4 +1,5 @@
 import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, NotificationPreference, TeamEvent, User } from '../types/models';
+import { getNextGameOnOrAfterToday } from '../utils/events';
 import { readTeamPasscode } from '../utils/storage';
 
 const parse = async <T,>(response: Response): Promise<T> => {
@@ -24,11 +25,11 @@ const api = async <T,>(path: string, init?: RequestInit) => {
 };
 
 export const loadAppData = async (): Promise<DataStore> => {
-  const [events, nextGame, messages] = await Promise.all([
+  const [events, messages] = await Promise.all([
     api<TeamEvent[]>('/events'),
-    api<TeamEvent | null>('/next-game'),
     api<Message[]>('/messages'),
   ]);
+  const nextGame = getNextGameOnOrAfterToday(events);
 
   const users = await api<User[]>('/users');
   const availability = await api<DataStore['availability']>('/availability');

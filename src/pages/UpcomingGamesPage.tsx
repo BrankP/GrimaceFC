@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAppState } from '../App';
 import { formatDayAndMonth, formatDayOfMonth, formatLocalTime, getBrowserTimeZone, getMonthLabel } from '../utils/date';
+import { getChronologicalEventTimeMs, getNextGameOnOrAfterToday } from '../utils/events';
 import type { EventGoalDetail, TeamEvent } from '../types/models';
 
 const SYSTEM_USER_ID = 'grimace-bot';
@@ -16,12 +17,9 @@ export function UpcomingGamesPage() {
   const store = data!;
 
   const sortedEvents = useMemo(() => {
-    return [...store.events].sort((a, b) => +new Date(a.date) - +new Date(b.date));
+    return [...store.events].sort((a, b) => getChronologicalEventTimeMs(a) - getChronologicalEventTimeMs(b));
   }, [store.events]);
-  const nextGameId = useMemo(() => {
-    const nowMs = Date.now();
-    return sortedEvents.find((event) => event.eventType === 'Game' && +new Date(event.date) >= nowMs)?.id ?? null;
-  }, [sortedEvents]);
+  const nextGameId = useMemo(() => getNextGameOnOrAfterToday(sortedEvents)?.id ?? null, [sortedEvents]);
   const playerUsers = useMemo(() => store.users.filter((user) => user.id !== SYSTEM_USER_ID), [store.users]);
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
