@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { useAppState } from '../App';
 
 const SYSTEM_USER_ID = 'grimace-bot';
+const TEAM_STATS_START_DATE_ISO = '2026-04-01T00:00:00Z';
+const TEAM_STATS_START_DATE_LABEL = 'After 1 April 2026';
 
 type RankedPlayer = {
   id: string;
@@ -52,6 +54,9 @@ const resultTypeForScores = (grimaceScore: number, opponentScore: number): Exclu
   if (grimaceScore < opponentScore) return 'L';
   return 'D';
 };
+
+const isGameAfterTeamStatsStartDate = (eventDate: string) =>
+  new Date(eventDate).getTime() > new Date(TEAM_STATS_START_DATE_ISO).getTime();
 
 function RankedList({
   title,
@@ -106,27 +111,46 @@ function RankedList({
 export function TeamStatsPage() {
   const { data, currentUser } = useAppState();
 
-  const players = useMemo<RankedPlayer[]>(
-    () =>
-      (data?.users ?? [])
-        .filter((user) => user.id !== SYSTEM_USER_ID)
-        .map((user) => {
-          const goals = toStatValue(user.goals);
-          const assists = toStatValue(user.assists);
-          return {
-            id: user.id,
-            name: user.name,
-            goals,
-            assists,
-            goalContributions: goals + assists,
-          };
-        }),
-    [data?.users],
-  );
+  const players = useMemo<RankedPlayer[]>(() => {
+    const playerStats = new Map<string, { goals: number; assists: number }>();
+
+    (data?.events ?? [])
+      .filter((event) => event.eventType === 'Game')
+      .filter((event) => isGameAfterTeamStatsStartDate(event.date))
+      .forEach((event) => {
+        (event.score?.goalDetails ?? []).forEach((goalDetail) => {
+          if (goalDetail.scorerUserId && !goalDetail.isOwnGoal) {
+            const current = playerStats.get(goalDetail.scorerUserId) ?? { goals: 0, assists: 0 };
+            playerStats.set(goalDetail.scorerUserId, { ...current, goals: current.goals + 1 });
+          }
+
+          if (goalDetail.assistUserId) {
+            const current = playerStats.get(goalDetail.assistUserId) ?? { goals: 0, assists: 0 };
+            playerStats.set(goalDetail.assistUserId, { ...current, assists: current.assists + 1 });
+          }
+        });
+      });
+
+    return (data?.users ?? [])
+      .filter((user) => user.id !== SYSTEM_USER_ID)
+      .map((user) => {
+        const stats = playerStats.get(user.id);
+        const goals = toStatValue(stats?.goals);
+        const assists = toStatValue(stats?.assists);
+        return {
+          id: user.id,
+          name: user.name,
+          goals,
+          assists,
+          goalContributions: goals + assists,
+        };
+      });
+  }, [data?.events, data?.users]);
 
   const seasonRecord = useMemo<SeasonRecord>(() => {
     const completedGames = (data?.events ?? [])
       .filter((event) => event.eventType === 'Game')
+      .filter((event) => isGameAfterTeamStatsStartDate(event.date))
       .filter((event) => event.score !== null && event.score !== undefined)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -183,7 +207,6 @@ export function TeamStatsPage() {
 
   const hasAnyStats = totals.totalGoalContributions > 0;
 
-
   const myContributions = useMemo(() => {
     if (!currentUser) return 0;
     const me = players.find((player) => player.id === currentUser.id);
@@ -198,6 +221,7 @@ export function TeamStatsPage() {
   return (
     <section className="team-stats-page">
       <h2>Team Stats</h2>
+      <p className="muted">{TEAM_STATS_START_DATE_LABEL}</p>
 
       <article className="card team-season-record-card">
         <div className="team-season-grid" role="table" aria-label="Season record summary">
