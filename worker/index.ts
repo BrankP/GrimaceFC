@@ -502,6 +502,17 @@ const schemaStatements = [
     user_id TEXT NOT NULL,
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    edited_at TEXT,
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS message_reactions (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(message_id, user_id, emoji),
+    FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE,
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -608,6 +619,8 @@ const schemaStatements = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)',
   'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id, emoji)',
+  'CREATE INDEX IF NOT EXISTS idx_message_reactions_user ON message_reactions(user_id)',
   'CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)',
   'CREATE INDEX IF NOT EXISTS idx_push_queue_created_at ON push_notification_queue(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id)',
@@ -632,6 +645,15 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
   if (!existingColumns.has('map_address')) {
     await env.DB.prepare('ALTER TABLE events ADD COLUMN map_address TEXT').run();
+  }
+};
+
+const ensureMessageEditColumn = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(messages)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+
+  if (!existingColumns.has('edited_at')) {
+    await env.DB.prepare('ALTER TABLE messages ADD COLUMN edited_at TEXT').run();
   }
 };
 
@@ -794,6 +816,7 @@ const ensureSchema = async (env: Env) => {
       await ensureLineupDutyColumns(env);
       await ensureUserStatsColumns(env);
       await ensureUserNotificationPreferenceColumn(env);
+      await ensureMessageEditColumn(env);
       await ensureRefRosterIdColumn(env);
       await ensureNextRefStateSlotColumn(env);
       await ensureDefaultDutyAssignments(env);
@@ -803,6 +826,59 @@ const ensureSchema = async (env: Env) => {
     })();
   }
   await schemaInitPromise;
+};
+
+
+type MessageRow = { id: string; user_id: string; text: string; created_at: string; edited_at: string | null };
+type ReactionRow = { message_id: string; emoji: string; user_id: string; user_name: string; created_at: string };
+
+const normalizeEmoji = (value: unknown) => String(value ?? '').trim().slice(0, 32);
+
+const getMessagePayloads = async (env: Env, rows: MessageRow[]) => {
+  if (!rows.length) return [];
+  const messageIds = rows.map((row) => row.id);
+  const placeholders = messageIds.map((_, index) => `?${index + 1}`).join(',');
+  const reactions = await env.DB.prepare(
+    `SELECT message_reactions.message_id AS message_id,
+            message_reactions.emoji AS emoji,
+            message_reactions.user_id AS user_id,
+            users.name AS user_name,
+            message_reactions.created_at AS created_at
+       FROM message_reactions
+       JOIN users ON users.id = message_reactions.user_id
+      WHERE message_reactions.message_id IN (${placeholders})
+      ORDER BY message_reactions.created_at ASC`,
+  ).bind(...messageIds).all<ReactionRow>();
+
+  const reactionsByMessage = new Map<string, Map<string, Array<{ id: string; name: string }>>>();
+  for (const reaction of reactions.results) {
+    const byEmoji = reactionsByMessage.get(reaction.message_id) ?? new Map<string, Array<{ id: string; name: string }>>();
+    const users = byEmoji.get(reaction.emoji) ?? [];
+    users.push({ id: reaction.user_id, name: reaction.user_name });
+    byEmoji.set(reaction.emoji, users);
+    reactionsByMessage.set(reaction.message_id, byEmoji);
+  }
+
+  return rows.map((row) => {
+    const byEmoji = reactionsByMessage.get(row.id) ?? new Map<string, Array<{ id: string; name: string }>>();
+    return {
+      id: row.id,
+      userId: row.user_id,
+      text: row.text,
+      createdAt: row.created_at,
+      editedAt: row.edited_at,
+      reactions: Array.from(byEmoji.entries()).map(([emoji, users]) => ({ emoji, count: users.length, users })),
+    };
+  });
+};
+
+const getMessagePayload = async (env: Env, messageId: string) => {
+  const row = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at FROM messages WHERE id = ?1 LIMIT 1')
+    .bind(messageId)
+    .first<MessageRow>();
+  if (!row) return null;
+  const [payload] = await getMessagePayloads(env, [row]);
+  return payload;
 };
 
 const lineupFromRow = (row: Record<string, unknown>) => ({
@@ -1455,14 +1531,9 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/messages' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at FROM messages ORDER BY created_at DESC LIMIT 50').all();
-      return jsonResponse(
-        results
-          .reverse()
-          .map((row) => ({ id: row.id, userId: row.user_id, text: row.text, createdAt: row.created_at })),
-        200,
-        cacheHeadersFor(pathname),
-      );
+      const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at FROM messages ORDER BY created_at DESC LIMIT 50').all<MessageRow>();
+      const payload = await getMessagePayloads(env, results.reverse());
+      return jsonResponse(payload, 200, cacheHeadersFor(pathname));
     }
 
     if (pathname === '/api/messages' && method === 'POST') {
@@ -1482,7 +1553,66 @@ async function handleApi(request: Request, env: Env) {
         console.error('push_notification_flow_failed', err instanceof Error ? err.message : String(err));
       }
 
-      return jsonResponse({ id, userId: body.userId, text: trimmedText, createdAt }, 201, { 'Cache-Control': 'no-store' });
+      const payload = await getMessagePayload(env, id);
+      return jsonResponse(payload, 201, { 'Cache-Control': 'no-store' });
+    }
+
+    const messageReactionMatch = pathname.match(/^\/api\/messages\/([^/]+)\/reactions$/);
+    if (messageReactionMatch && method === 'POST') {
+      const messageId = decodeURIComponent(messageReactionMatch[1]);
+      const body = (await request.json()) as { userId?: string; emoji?: string };
+      const emoji = normalizeEmoji(body.emoji);
+      if (!body.userId || !emoji) return errorResponse('userId and emoji are required');
+
+      const message = await env.DB.prepare('SELECT id FROM messages WHERE id = ?1 LIMIT 1').bind(messageId).first<{ id: string }>();
+      if (!message) return errorResponse('Message not found', 404);
+
+      const existing = await env.DB.prepare('SELECT id FROM message_reactions WHERE message_id = ?1 AND user_id = ?2 AND emoji = ?3 LIMIT 1')
+        .bind(messageId, body.userId, emoji)
+        .first<{ id: string }>();
+
+      if (existing) {
+        await env.DB.prepare('DELETE FROM message_reactions WHERE id = ?1').bind(existing.id).run();
+      } else {
+        await env.DB.prepare('INSERT INTO message_reactions (id, message_id, user_id, emoji, created_at) VALUES (?1, ?2, ?3, ?4, ?5)')
+          .bind(createId('react'), messageId, body.userId, emoji, nowIso())
+          .run();
+      }
+
+      return jsonResponse(await getMessagePayload(env, messageId), 200, { 'Cache-Control': 'no-store' });
+    }
+
+    const messageMatch = pathname.match(/^\/api\/messages\/([^/]+)$/);
+    if (messageMatch && method === 'PATCH') {
+      const messageId = decodeURIComponent(messageMatch[1]);
+      const body = (await request.json()) as { userId?: string; text?: string };
+      const trimmedText = body.text?.trim() ?? '';
+      if (!body.userId || !trimmedText) return errorResponse('userId and text are required');
+
+      const existing = await env.DB.prepare('SELECT id, user_id FROM messages WHERE id = ?1 LIMIT 1').bind(messageId).first<{ id: string; user_id: string }>();
+      if (!existing) return errorResponse('Message not found', 404);
+      if (existing.user_id !== body.userId) return errorResponse('Only the message composer can edit this message', 403);
+
+      await env.DB.prepare('UPDATE messages SET text = ?1, edited_at = ?2 WHERE id = ?3')
+        .bind(trimmedText, nowIso(), messageId)
+        .run();
+
+      return jsonResponse(await getMessagePayload(env, messageId), 200, { 'Cache-Control': 'no-store' });
+    }
+
+    if (messageMatch && method === 'DELETE') {
+      const messageId = decodeURIComponent(messageMatch[1]);
+      const body = (await request.json()) as { userId?: string };
+      if (!body.userId) return errorResponse('userId is required');
+
+      const existing = await env.DB.prepare('SELECT id, user_id FROM messages WHERE id = ?1 LIMIT 1').bind(messageId).first<{ id: string; user_id: string }>();
+      if (!existing) return errorResponse('Message not found', 404);
+      if (existing.user_id !== body.userId) return errorResponse('Only the message composer can delete this message', 403);
+
+      await env.DB.prepare('DELETE FROM message_reactions WHERE message_id = ?1').bind(messageId).run();
+      await env.DB.prepare('DELETE FROM messages WHERE id = ?1').bind(messageId).run();
+
+      return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
     }
 
 

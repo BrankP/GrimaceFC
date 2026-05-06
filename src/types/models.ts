@@ -45,12 +45,25 @@ export interface EventScore {
   updatedAt: string;
 }
 
+export interface MessageReactionUser {
+  id: string;
+  name: string;
+}
+
+export interface MessageReactionSummary {
+  emoji: string;
+  count: number;
+  users: MessageReactionUser[];
+}
+
 export interface Message {
   id: string;
   userId: string;
   text: string;
   createdAt: string;
+  editedAt?: string | null;
   notificationPreference?: NotificationPreference;
+  reactions: MessageReactionSummary[];
 }
 
 export interface Lineup {

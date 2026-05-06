@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS next_ref_passes;
 DROP TABLE IF EXISTS ref_roster;
 DROP TABLE IF EXISTS availability;
 DROP TABLE IF EXISTS lineups;
+DROP TABLE IF EXISTS message_reactions;
 DROP TABLE IF EXISTS messages;
 DROP TABLE IF EXISTS event_scores;
 DROP TABLE IF EXISTS push_notification_queue;
@@ -91,7 +92,19 @@ CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   text TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  edited_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS message_reactions (
+  id TEXT PRIMARY KEY,
+  message_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  emoji TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE(message_id, user_id, emoji),
+  FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE,
+  FOREIGN KEY(user_id) REFERENCES users(id)
 );
 
 CREATE TABLE IF NOT EXISTS lineups (
