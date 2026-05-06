@@ -19,6 +19,12 @@ type WebPushSubscription = {
   };
 };
 type PendingPushNotification = { title: string; body: string; url: string; tag?: string };
+type PushSubscriptionMetadata = {
+  userAgent?: string;
+  deviceLabel?: string;
+  standalone?: boolean;
+  notificationPermission?: string;
+};
 
 const rateStore = new Map<string, RateEntry>();
 
@@ -152,6 +158,24 @@ const cacheHeadersFor = (pathname: string) => {
 const nowIso = () => new Date().toISOString();
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const pushLog = (event: string, details: Record<string, unknown> = {}) => {
+  console.error(JSON.stringify({ event, at: nowIso(), ...details }));
+};
+
+const safeEndpointSummary = (endpoint: string) => {
+  let host = 'invalid-endpoint';
+  try {
+    host = new URL(endpoint).host;
+  } catch {
+    // Keep the fallback host.
+  }
+  return {
+    host,
+    prefix: endpoint.slice(0, 32),
+    length: endpoint.length,
+  };
+};
 
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -335,7 +359,7 @@ const sendPushPing = async (env: Env, endpoint: string) => {
 };
 
 const sendTagNotifications = async (env: Env, payload: { senderUserId: string; messageText: string }) => {
-  console.error('push_flow_start', {
+  pushLog('push_flow_start', {
     senderUserId: payload.senderUserId,
     messagePreview: payload.messageText.slice(0, 160),
     hasAtSymbol: payload.messageText.includes('@'),
@@ -343,7 +367,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
 
   const vapid = getVapidConfig(env);
   if (!vapid) {
-    console.error('push_flow_skipped_missing_vapid', { senderUserId: payload.senderUserId });
+    pushLog('push_flow_skipped_missing_vapid', { senderUserId: payload.senderUserId });
     return;
   }
 
@@ -361,7 +385,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     const taggedCandidates = await env.DB.prepare("SELECT id, name FROM users WHERE notification_preference = 'tagged_only'").all<{ id: string; name: string }>();
     taggedNames = parseTaggedNamesFromCandidates(payload.messageText, taggedCandidates.results.map((user) => user.name));
 
-    console.error('push_flow_tag_parse', {
+    pushLog('push_flow_tag_parse', {
       senderUserId: payload.senderUserId,
       taggedOnlyCandidateCount: taggedCandidates.results.length,
       taggedOnlyCandidateIds: taggedCandidates.results.map((user) => user.id),
@@ -373,7 +397,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
         .filter((user) => user.id !== payload.senderUserId && taggedNames.includes(normalizeMentionName(user.name)))
         .map((user) => user.id);
     } else {
-      console.error('push_flow_no_valid_tags', {
+      pushLog('push_flow_no_valid_tags', {
         senderUserId: payload.senderUserId,
         messageText: payload.messageText.slice(0, 160),
       });
@@ -383,19 +407,30 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
   const senderSubscriptionCount = await env.DB.prepare('SELECT COUNT(1) AS count FROM push_subscriptions WHERE user_id = ?1')
     .bind(payload.senderUserId)
     .first<{ count: number }>();
+  const preferenceRows = await env.DB.prepare('SELECT id, notification_preference FROM users WHERE id != ?1')
+    .bind(payload.senderUserId)
+    .all<{ id: string; notification_preference: string }>();
+  const disabledRecipientIds = preferenceRows.results
+    .filter((user) => user.notification_preference === 'disabled')
+    .map((user) => user.id);
   const recipientIds = Array.from(new Set([...allChatRecipientIds, ...taggedOnlyRecipientIds]));
-  console.error('push_flow_recipient_summary', {
+  pushLog('push_flow_recipient_summary', {
     senderUserId: payload.senderUserId,
     senderIncludedInRecipients: recipientIds.includes(payload.senderUserId),
     senderSubscriptionCount: senderSubscriptionCount?.count ?? 0,
     allChatRecipientIds,
     taggedOnlyRecipientIds,
+    disabledRecipientIds,
+    preferenceCounts: preferenceRows.results.reduce<Record<string, number>>((counts, user) => {
+      counts[user.notification_preference] = (counts[user.notification_preference] ?? 0) + 1;
+      return counts;
+    }, {}),
     recipientIds,
     taggedNames,
   });
 
   if (!recipientIds.length) {
-    console.error('push_flow_no_recipients', {
+    pushLog('push_flow_no_recipients', {
       senderUserId: payload.senderUserId,
       taggedNames,
     });
@@ -410,7 +445,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     .all<{ id: string; user_id: string; endpoint: string; p256dh_key: string; auth_key: string }>();
 
   if (!subscriptions.results.length) {
-    console.error('push_flow_no_subscriptions', {
+    pushLog('push_flow_no_subscriptions', {
       senderUserId: payload.senderUserId,
       recipientIds,
       taggedNames,
@@ -418,7 +453,7 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
     return;
   }
 
-  console.error('push_flow_dispatch_start', {
+  pushLog('push_flow_dispatch_start', {
     senderUserId: payload.senderUserId,
     taggedNames,
     recipientIds,
@@ -441,9 +476,12 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
       await storePendingNotification(env, subscription.endpoint, notificationPayload);
       const pushResult = await sendPushPing(env, subscription.endpoint);
       if (pushResult.ok) {
-        console.error('push_send_ok', {
+        await env.DB.prepare('UPDATE push_subscriptions SET last_attempt_at = ?1, last_success_at = ?1, last_failure_at = NULL, last_failure_status = NULL, last_failure_reason = NULL, last_attempt_message = ?2 WHERE id = ?3')
+          .bind(nowIso(), 'accepted', subscription.id)
+          .run();
+        pushLog('push_send_ok', {
           userId: subscription.user_id,
-          endpoint: subscription.endpoint.slice(0, 80),
+          endpoint: safeEndpointSummary(subscription.endpoint),
         });
         continue;
       }
@@ -454,16 +492,24 @@ const sendTagNotifications = async (env: Env, payload: { senderUserId: string; m
         (pushResult.status === 403 && responseText.toLowerCase().includes('do not correspond to the credentials used to create the subscriptions'));
       if (shouldDelete) {
         await env.DB.prepare('DELETE FROM push_subscriptions WHERE id = ?1').bind(subscription.id).run();
+      } else {
+        await env.DB.prepare('UPDATE push_subscriptions SET last_attempt_at = ?1, last_failure_at = ?1, last_failure_status = ?2, last_failure_reason = ?3, last_attempt_message = ?4 WHERE id = ?5')
+          .bind(nowIso(), pushResult.status, 'provider_rejected', responseText.slice(0, 500), subscription.id)
+          .run();
       }
-      console.error('push_send_failed', {
-        endpoint: subscription.endpoint.slice(0, 80),
+      pushLog('push_send_failed', {
+        endpoint: safeEndpointSummary(subscription.endpoint),
         userId: subscription.user_id,
         statusCode: pushResult.status,
+        deletedSubscription: shouldDelete,
         responseText: responseText.slice(0, 200),
       });
     } catch (err) {
-      console.error('push_send_failed', {
-        endpoint: subscription.endpoint.slice(0, 80),
+      await env.DB.prepare('UPDATE push_subscriptions SET last_attempt_at = ?1, last_failure_at = ?1, last_failure_status = NULL, last_failure_reason = ?2, last_attempt_message = ?3 WHERE id = ?4')
+        .bind(nowIso(), 'send_exception', err instanceof Error ? err.message.slice(0, 500) : String(err).slice(0, 500), subscription.id)
+        .run();
+      pushLog('push_send_failed', {
+        endpoint: safeEndpointSummary(subscription.endpoint),
         userId: subscription.user_id,
         message: err instanceof Error ? err.message : String(err),
       });
@@ -522,8 +568,18 @@ const schemaStatements = [
     p256dh_key TEXT NOT NULL,
     auth_key TEXT NOT NULL,
     expiration_time INTEGER,
+    user_agent TEXT,
+    device_label TEXT,
+    standalone INTEGER,
+    notification_permission TEXT,
+    last_attempt_at TEXT,
+    last_success_at TEXT,
+    last_failure_at TEXT,
+    last_failure_status INTEGER,
+    last_failure_reason TEXT,
+    last_attempt_message TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')), 
     UNIQUE(user_id, endpoint),
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
@@ -632,6 +688,7 @@ const schemaStatements = [
   'CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id, emoji)',
   'CREATE INDEX IF NOT EXISTS idx_message_reactions_user ON message_reactions(user_id)',
   'CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_push_subscriptions_updated_at ON push_subscriptions(updated_at)',
   'CREATE INDEX IF NOT EXISTS idx_push_queue_created_at ON push_notification_queue(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_availability_event_user ON availability(event_id, user_id)',
   'CREATE INDEX IF NOT EXISTS idx_event_goal_details_event_sort ON event_goal_details(event_id, sort_order, created_at)',
@@ -794,6 +851,29 @@ const ensureGrimaceUser = async (env: Env) => {
     .run();
 };
 
+const ensurePushSubscriptionDiagnosticColumns = async (env: Env) => {
+  const columnsResult = await env.DB.prepare('PRAGMA table_info(push_subscriptions)').all<{ name: string }>();
+  const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
+  const columnsToAdd = [
+    ['user_agent', 'TEXT'],
+    ['device_label', 'TEXT'],
+    ['standalone', 'INTEGER'],
+    ['notification_permission', 'TEXT'],
+    ['last_attempt_at', 'TEXT'],
+    ['last_success_at', 'TEXT'],
+    ['last_failure_at', 'TEXT'],
+    ['last_failure_status', 'INTEGER'],
+    ['last_failure_reason', 'TEXT'],
+    ['last_attempt_message', 'TEXT'],
+  ] as const;
+
+  for (const [name, definition] of columnsToAdd) {
+    if (!existingColumns.has(name)) {
+      await env.DB.prepare(`ALTER TABLE push_subscriptions ADD COLUMN ${name} ${definition}`).run();
+    }
+  }
+};
+
 const ensurePushUniquenessConstraints = async (env: Env) => {
   await env.DB.prepare(
     `DELETE FROM push_subscriptions
@@ -801,6 +881,15 @@ const ensurePushUniquenessConstraints = async (env: Env) => {
        SELECT MAX(rowid)
        FROM push_subscriptions
        GROUP BY user_id, endpoint
+     )`,
+  ).run();
+
+  await env.DB.prepare(
+    `DELETE FROM push_subscriptions
+     WHERE rowid NOT IN (
+       SELECT MAX(rowid)
+       FROM push_subscriptions
+       GROUP BY endpoint
      )`,
   ).run();
 
@@ -814,6 +903,7 @@ const ensurePushUniquenessConstraints = async (env: Env) => {
   ).run();
 
   await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_user_endpoint ON push_subscriptions(user_id, endpoint)').run();
+  await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint)').run();
   await env.DB.prepare('CREATE UNIQUE INDEX IF NOT EXISTS idx_push_queue_endpoint ON push_notification_queue(endpoint)').run();
 };
 
@@ -827,6 +917,7 @@ const ensureSchema = async (env: Env) => {
       await ensureLineupDutyColumns(env);
       await ensureUserStatsColumns(env);
       await ensureUserNotificationPreferenceColumn(env);
+      await ensurePushSubscriptionDiagnosticColumns(env);
       await ensureMessageEditColumn(env);
       await ensureRefRosterIdColumn(env);
       await ensureNextRefStateSlotColumn(env);
@@ -1553,8 +1644,161 @@ async function handleApi(request: Request, env: Env) {
       return jsonResponse({ notification: JSON.parse(pending.payload_json) }, 200, { 'Cache-Control': 'no-store' });
     }
 
+    if (pathname === '/api/push/debug' && method === 'GET') {
+      const adminError = requireAdminPasscode(request, env);
+      if (adminError) return adminError;
+
+      const rows = await env.DB.prepare(
+        `SELECT
+          users.id AS user_id,
+          users.name AS user_name,
+          users.notification_preference AS notification_preference,
+          push_subscriptions.id AS subscription_id,
+          push_subscriptions.endpoint AS endpoint,
+          push_subscriptions.expiration_time AS expiration_time,
+          push_subscriptions.user_agent AS user_agent,
+          push_subscriptions.device_label AS device_label,
+          push_subscriptions.standalone AS standalone,
+          push_subscriptions.notification_permission AS notification_permission,
+          push_subscriptions.created_at AS created_at,
+          push_subscriptions.updated_at AS updated_at,
+          push_subscriptions.last_attempt_at AS last_attempt_at,
+          push_subscriptions.last_success_at AS last_success_at,
+          push_subscriptions.last_failure_at AS last_failure_at,
+          push_subscriptions.last_failure_status AS last_failure_status,
+          push_subscriptions.last_failure_reason AS last_failure_reason,
+          push_subscriptions.last_attempt_message AS last_attempt_message
+        FROM users
+        LEFT JOIN push_subscriptions ON push_subscriptions.user_id = users.id
+        WHERE users.id != ?1
+        ORDER BY users.name ASC, push_subscriptions.updated_at DESC`,
+      ).bind(SYSTEM_USER_ID).all<{
+        user_id: string;
+        user_name: string;
+        notification_preference: string;
+        subscription_id: string | null;
+        endpoint: string | null;
+        expiration_time: number | null;
+        user_agent: string | null;
+        device_label: string | null;
+        standalone: number | null;
+        notification_permission: string | null;
+        created_at: string | null;
+        updated_at: string | null;
+        last_attempt_at: string | null;
+        last_success_at: string | null;
+        last_failure_at: string | null;
+        last_failure_status: number | null;
+        last_failure_reason: string | null;
+        last_attempt_message: string | null;
+      }>();
+
+      const usersById = new Map<string, {
+        userId: string;
+        name: string;
+        notificationPreference: string;
+        notificationPreferenceEnabled: boolean;
+        pushEnabled: boolean;
+        hasPushSubscription: boolean;
+        needsResubscribe: boolean;
+        subscriptionCount: number;
+        lastSubscriptionUpdateAt: string | null;
+        lastPushAttemptAt: string | null;
+        lastPushStatus: string | null;
+        subscriptions: Array<Record<string, unknown>>;
+      }>();
+
+      for (const row of rows.results) {
+        const preferenceEnabled = row.notification_preference !== 'disabled';
+        const current = usersById.get(row.user_id) ?? {
+          userId: row.user_id,
+          name: row.user_name,
+          notificationPreference: row.notification_preference,
+          notificationPreferenceEnabled: preferenceEnabled,
+          pushEnabled: false,
+          hasPushSubscription: false,
+          needsResubscribe: preferenceEnabled,
+          subscriptionCount: 0,
+          lastSubscriptionUpdateAt: null,
+          lastPushAttemptAt: null,
+          lastPushStatus: null,
+          subscriptions: [],
+        };
+
+        if (row.subscription_id && row.endpoint) {
+          current.subscriptionCount += 1;
+          if (!current.lastSubscriptionUpdateAt || (row.updated_at && row.updated_at > current.lastSubscriptionUpdateAt)) {
+            current.lastSubscriptionUpdateAt = row.updated_at;
+          }
+          if (row.last_attempt_at && (!current.lastPushAttemptAt || row.last_attempt_at > current.lastPushAttemptAt)) {
+            current.lastPushAttemptAt = row.last_attempt_at;
+            current.lastPushStatus = row.last_success_at === row.last_attempt_at ? 'accepted' : row.last_failure_reason ?? 'failed';
+          }
+          current.subscriptions.push({
+            id: row.subscription_id,
+            endpoint: safeEndpointSummary(row.endpoint),
+            expirationTime: row.expiration_time,
+            deviceLabel: row.device_label,
+            standalone: row.standalone === null ? null : Boolean(row.standalone),
+            notificationPermission: row.notification_permission,
+            userAgent: row.user_agent,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
+            lastAttemptAt: row.last_attempt_at,
+            lastSuccessAt: row.last_success_at,
+            lastFailureAt: row.last_failure_at,
+            lastFailureStatus: row.last_failure_status,
+            lastFailureReason: row.last_failure_reason,
+            lastAttemptMessage: row.last_attempt_message,
+          });
+        }
+
+        usersById.set(row.user_id, current);
+      }
+
+      const users = Array.from(usersById.values()).map((user) => {
+        const hasPushSubscription = user.subscriptionCount > 0;
+        const needsResubscribe = user.notificationPreferenceEnabled && !hasPushSubscription;
+        return {
+          ...user,
+          pushEnabled: user.notificationPreferenceEnabled && hasPushSubscription,
+          hasPushSubscription,
+          needsResubscribe,
+          lastPushStatus: user.lastPushAttemptAt ? user.lastPushStatus : null,
+        };
+      });
+      const summary = users.reduce(
+        (counts, user) => {
+          counts.totalUsers += 1;
+          if (user.notificationPreferenceEnabled) counts.notificationPreferenceEnabled += 1;
+          if (user.pushEnabled) counts.pushEnabled += 1;
+          if (user.needsResubscribe) counts.needsResubscribe += 1;
+          counts.totalSubscriptions += user.subscriptionCount;
+          return counts;
+        },
+        { totalUsers: 0, notificationPreferenceEnabled: 0, pushEnabled: 0, needsResubscribe: 0, totalSubscriptions: 0 },
+      );
+
+      return jsonResponse({
+        generatedAt: nowIso(),
+        summary,
+        notes: [
+          'pushEnabled means the user has notifications enabled by preference and at least one stored push subscription.',
+          'needsResubscribe means the user wants notifications but currently has no stored subscription; ask them to open Settings and save All messages or Mentions only on the device that should receive pushes.',
+          'Null device metadata means the subscription was saved before diagnostic metadata was added; resaving notifications on that device will refresh it.',
+        ],
+        vapid: {
+          hasPublicKey: Boolean(env.VAPID_PUBLIC_KEY),
+          publicKeyLength: env.VAPID_PUBLIC_KEY?.length ?? 0,
+          hasPrivateKey: Boolean(env.VAPID_PRIVATE_KEY),
+          subject: env.VAPID_SUBJECT ?? 'mailto:admin@grimacefc.local',
+        },
+        users,
+      }, 200, { 'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate', Pragma: 'no-cache' });
+    }
+
     if (pathname === '/api/push/subscription' && method === 'POST') {
-      const body = (await request.json()) as { userId?: string; subscription?: WebPushSubscription };
+      const body = (await request.json()) as { userId?: string; subscription?: WebPushSubscription; metadata?: PushSubscriptionMetadata };
       if (!body.userId) return errorResponse('userId is required');
       const existingUser = await env.DB.prepare('SELECT id FROM users WHERE id = ?1 LIMIT 1').bind(body.userId).first<{ id: string }>();
       if (!existingUser?.id) return errorResponse('Unknown userId', 404);
@@ -1563,13 +1807,20 @@ async function handleApi(request: Request, env: Env) {
 
       const id = createId('push');
       const timestamp = nowIso();
+      await env.DB.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?1 AND user_id != ?2')
+        .bind(subscription.endpoint, body.userId)
+        .run();
       await env.DB.prepare(
-        `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh_key, auth_key, expiration_time, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        `INSERT INTO push_subscriptions (id, user_id, endpoint, p256dh_key, auth_key, expiration_time, user_agent, device_label, standalone, notification_permission, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
          ON CONFLICT(user_id, endpoint) DO UPDATE SET
            p256dh_key=excluded.p256dh_key,
            auth_key=excluded.auth_key,
            expiration_time=excluded.expiration_time,
+           user_agent=excluded.user_agent,
+           device_label=excluded.device_label,
+           standalone=excluded.standalone,
+           notification_permission=excluded.notification_permission,
            updated_at=excluded.updated_at`,
       )
         .bind(
@@ -1579,10 +1830,22 @@ async function handleApi(request: Request, env: Env) {
           subscription.keys.p256dh,
           subscription.keys.auth,
           subscription.expirationTime ?? null,
+          body.metadata?.userAgent?.slice(0, 500) ?? null,
+          body.metadata?.deviceLabel?.slice(0, 120) ?? null,
+          body.metadata?.standalone === undefined ? null : Number(Boolean(body.metadata.standalone)),
+          body.metadata?.notificationPermission?.slice(0, 32) ?? null,
           timestamp,
           timestamp,
         )
         .run();
+
+      pushLog('push_subscription_saved', {
+        userId: body.userId,
+        endpoint: safeEndpointSummary(subscription.endpoint),
+        deviceLabel: body.metadata?.deviceLabel ?? null,
+        standalone: body.metadata?.standalone ?? null,
+        notificationPermission: body.metadata?.notificationPermission ?? null,
+      });
 
       return jsonResponse({ ok: true }, 201, { 'Cache-Control': 'no-store' });
     }
@@ -1594,6 +1857,8 @@ async function handleApi(request: Request, env: Env) {
       await env.DB.prepare('DELETE FROM push_subscriptions WHERE user_id = ?1 AND endpoint = ?2')
         .bind(body.userId, body.endpoint)
         .run();
+
+      pushLog('push_subscription_deleted', { userId: body.userId, endpoint: safeEndpointSummary(body.endpoint) });
 
       return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
     }
@@ -1618,7 +1883,7 @@ async function handleApi(request: Request, env: Env) {
       try {
         await sendTagNotifications(env, { senderUserId: body.userId, messageText: trimmedText });
       } catch (err) {
-        console.error('push_notification_flow_failed', err instanceof Error ? err.message : String(err));
+        pushLog('push_notification_flow_failed', { message: err instanceof Error ? err.message : String(err) });
       }
 
       const payload = await getMessagePayload(env, id);

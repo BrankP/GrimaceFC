@@ -1,4 +1,5 @@
 self.addEventListener('push', (event) => {
+  console.info('[push-sw] push_event_received', { hasData: Boolean(event.data), at: new Date().toISOString() });
   event.waitUntil(
     (async () => {
       let payload = { title: 'New message in chat', body: 'Open chat to view the message.', url: '/chat', tag: 'Grimace FC' };
@@ -12,7 +13,9 @@ self.addEventListener('push', (event) => {
       } else {
         const subscription = await self.registration.pushManager.getSubscription();
         if (subscription?.endpoint) {
+          console.info('[push-sw] pending_fetch_start', { endpointHost: new URL(subscription.endpoint).host, at: new Date().toISOString() });
           const response = await fetch(`/api/push/pending?endpoint=${encodeURIComponent(subscription.endpoint)}`, { method: 'GET' });
+          console.info('[push-sw] pending_fetch_complete', { ok: response.ok, status: response.status, at: new Date().toISOString() });
           if (response.ok) {
             const data = await response.json();
             if (data?.notification) payload = { ...payload, ...data.notification };
@@ -27,6 +30,7 @@ self.addEventListener('push', (event) => {
       const nextCount = previousCount + 1;
       const computedTitle = nextCount > 1 ? `${nextCount} new messages in chat` : 'New message in chat';
 
+      console.info('[push-sw] show_notification', { title: computedTitle, tag: payload.tag || 'Grimace FC', at: new Date().toISOString() });
       await self.registration.showNotification(computedTitle, {
         body: payload.body,
         icon: '/favicon.ico',
@@ -40,6 +44,7 @@ self.addEventListener('push', (event) => {
 });
 
 self.addEventListener('notificationclick', (event) => {
+  console.info('[push-sw] notification_click', { at: new Date().toISOString(), url: event.notification.data?.url || '/chat' });
   event.notification.close();
   const targetUrl = event.notification.data?.url || '/chat';
 
