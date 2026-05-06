@@ -116,6 +116,7 @@ export function UpcomingGamesPage() {
               const pendingRefUserId = event.pendingRefUserId ?? null;
               const indicator = getEventIndicator(event.eventType, event.homeAway);
               const isExpanded = expandedId === event.id;
+              const isNextGame = event.id === nextGameId;
               const currentlyResponsibleRefUserId = refDutyUserId ?? (event.homeAway === 'Away' ? pendingRefUserId : null);
               const loggedInUserHasDuty = Boolean(
                 currentUser && (beerDutyUserId === currentUser.id || currentlyResponsibleRefUserId === currentUser.id),
@@ -132,7 +133,7 @@ export function UpcomingGamesPage() {
                   ref={(element) => {
                     eventCardRefs.current[event.id] = element;
                   }}
-                  className={`sleek-event-row ${event.isNextUp ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}
+                  className={`sleek-event-row ${isNextGame ? 'next-up' : ''} ${isExpanded ? 'is-expanded' : 'is-collapsed'}`}
                 >
                   <div
                     className="sleek-event-header"
@@ -177,7 +178,7 @@ export function UpcomingGamesPage() {
                   </div>
 
                   <div className="sleek-event-main">
-                    {event.id === nextGameId && <p className="next-game-pill">Next Game</p>}
+                    {isNextGame && <p className="next-game-pill">Next Game</p>}
                     <p className="sleek-event-line">
                       <span>{formatEventTime(event.date, event.eventType)}</span>
                     </p>
