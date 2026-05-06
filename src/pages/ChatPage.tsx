@@ -26,6 +26,7 @@ export function ChatPage() {
     deleteMessage,
     toggleMessageReaction,
     getDisplayName,
+    getUserName,
     saveNickname,
     currentUser,
     canWrite,
@@ -46,7 +47,7 @@ export function ChatPage() {
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const messages = store.messages;
-  const selectedNicknameUserName = editingUserId ? getDisplayName(editingUserId) : '';
+  const selectedNicknameUserName = editingUserId ? getUserName(editingUserId) : '';
   const getReactionUserNames = (reaction: Message['reactions'][number]) => reaction.users.map((user) => getDisplayName(user.id)).join(', ');
   const actionMessage = actionMessageId ? messages.find((message) => message.id === actionMessageId) ?? null : null;
   const detailsMessage = detailsMessageId ? messages.find((message) => message.id === detailsMessageId) ?? null : null;
