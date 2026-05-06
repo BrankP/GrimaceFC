@@ -199,7 +199,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .next-ref-balance { font-size: 2.05rem; font-weight: 700; margin: 0; }
 .next-ref-owed { color: #d5c9f5; margin: .25rem 0 0; font-size: .85rem; }
 .next-ref-actions { padding-top: .7rem; }
-.next-ref-action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7rem; }
+.next-ref-action-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .7rem; }
 .next-ref-action-btn { transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease; }
 .next-ref-action-btn.is-pending {
   transform: translateY(1px) scale(.98);
@@ -217,6 +217,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .next-ref-pass-item { margin: 0; padding: .45rem .6rem; background: #2a1b47; border-radius: 10px; }
 .next-ref-roster-item { margin: 0; padding: .45rem .6rem; border-radius: 10px; background: #2a1b47; }
 .next-ref-roster-item.is-current { background: #4c2ea0; border: 1px solid #9b80f8; font-weight: 700; }
+.next-ref-roster-item.is-skipped span { text-decoration: line-through; text-decoration-thickness: 2px; color: #c8bce8; }
 .next-ref-roster-scroll { max-height: 55vh; overflow: auto; }
 .next-ref-history-item { padding: .55rem .65rem; border-radius: 10px; background: #2a1b47; }
 .team-stats-page { display: grid; gap: .7rem; }

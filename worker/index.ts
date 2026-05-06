@@ -595,6 +595,16 @@ const schemaStatements = [
     FOREIGN KEY(event_id) REFERENCES events(id),
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS next_ref_skips (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    ref_slot_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    skipped_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(event_id) REFERENCES events(id),
+    FOREIGN KEY(ref_slot_id) REFERENCES ref_roster(id),
+    FOREIGN KEY(user_id) REFERENCES users(id)
+  )`,
   `CREATE TABLE IF NOT EXISTS next_ref_history (
     id TEXT PRIMARY KEY,
     event_id TEXT NOT NULL,
@@ -614,6 +624,7 @@ const schemaStatements = [
   'CREATE INDEX IF NOT EXISTS idx_event_goal_details_event_sort ON event_goal_details(event_id, sort_order, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_ref_roster_order ON ref_roster(roster_order)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_passes_event ON next_ref_passes(event_id, passed_at)',
+  'CREATE INDEX IF NOT EXISTS idx_next_ref_skips_event_slot ON next_ref_skips(event_id, ref_slot_id)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_history_completed ON next_ref_history(completed_at DESC)',
 ] as const;
 
@@ -874,11 +885,15 @@ const getNextEligibleRosterUser = async (env: Env, eventId: string, currentRefSl
     .bind(eventId)
     .all<{ user_id: string }>();
   const passed = new Set(passRows.results.map((row) => row.user_id));
+  const skipRows = await env.DB.prepare('SELECT ref_slot_id FROM next_ref_skips WHERE event_id = ?1')
+    .bind(eventId)
+    .all<{ ref_slot_id: string }>();
+  const skippedSlots = new Set(skipRows.results.map((row) => row.ref_slot_id));
 
   const currentIndex = Math.max(0, rosterRows.results.findIndex((row) => row.id === currentRefSlotId));
   for (let offset = 1; offset <= rosterRows.results.length; offset += 1) {
     const candidate = rosterRows.results[(currentIndex + offset) % rosterRows.results.length];
-    if (!passed.has(candidate.user_id)) return candidate;
+    if (!passed.has(candidate.user_id) && !skippedSlots.has(candidate.id)) return candidate;
   }
 
   return rosterRows.results[currentIndex];
@@ -994,7 +1009,10 @@ const alignPendingCurrentRef = async (
   const hasCurrentPassed = await env.DB.prepare('SELECT id FROM next_ref_passes WHERE event_id = ?1 AND user_id = (SELECT user_id FROM ref_roster WHERE id = ?2 LIMIT 1) LIMIT 1')
     .bind(state.event_id, state.current_ref_slot_id)
     .first<{ id: string }>();
-  if (!hasCurrentPassed) return state;
+  const hasCurrentSkipped = await env.DB.prepare('SELECT id FROM next_ref_skips WHERE event_id = ?1 AND ref_slot_id = ?2 LIMIT 1')
+    .bind(state.event_id, state.current_ref_slot_id)
+    .first<{ id: string }>();
+  if (!hasCurrentPassed && !hasCurrentSkipped) return state;
   const eligible = await getNextEligibleRosterUser(env, state.event_id, state.current_ref_slot_id);
   if (!eligible || eligible.id === state.current_ref_slot_id) return state;
   if (hasLegacyCurrentUser) {
@@ -1025,11 +1043,12 @@ const buildNextRefPayload = async (env: Env) => {
     return {
       event: null,
       currentRefUserId: null,
+      currentRefSlotId: null,
       currentRefName: null,
       status: null,
       runningBalance: 0,
       passList: [],
-      roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id })),
+      roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id, skippedAt: null })),
     };
   }
 
@@ -1040,6 +1059,10 @@ const buildNextRefPayload = async (env: Env) => {
   const currentRefRow = state
     ? await env.DB.prepare('SELECT ref_roster.user_id AS user_id, users.name AS name FROM ref_roster JOIN users ON users.id = ref_roster.user_id WHERE ref_roster.id = ?1 LIMIT 1').bind(state.current_ref_slot_id).first<{ user_id: string; name: string }>()
     : null;
+  const skipRows = await env.DB.prepare('SELECT ref_slot_id, skipped_at FROM next_ref_skips WHERE event_id = ?1')
+    .bind(nextAway.id)
+    .all<{ ref_slot_id: string; skipped_at: string }>();
+  const skippedAtBySlotId = new Map(skipRows.results.map((row) => [row.ref_slot_id, row.skipped_at]));
 
   return {
     event: {
@@ -1054,11 +1077,12 @@ const buildNextRefPayload = async (env: Env) => {
       isNextUp: Boolean(nextAway.is_next_up),
     },
     currentRefUserId: currentRefRow?.user_id ?? null,
+    currentRefSlotId: state?.current_ref_slot_id ?? null,
     currentRefName: currentRefRow?.name ?? null,
     status: state?.status ?? null,
     runningBalance: Number(state?.running_balance ?? 0),
     passList: passRows.results.map((row) => ({ userId: row.user_id, name: row.name, passedAt: row.passed_at })),
-    roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id })),
+    roster: rosterRows.results.map((row) => ({ userId: row.user_id, name: row.name, order: Number(row.roster_order), slotId: row.id, skippedAt: skippedAtBySlotId.get(row.id) ?? null })),
   };
 };
 
@@ -1303,6 +1327,50 @@ async function handleApi(request: Request, env: Env) {
         : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
 
       await insertSystemMessage(env, messageText, body.userId);
+
+      return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
+    }
+
+    if (pathname === '/api/next-ref/skip' && method === 'POST') {
+      const adminError = requireAdminPasscode(request, env);
+      if (adminError) return adminError;
+      const body = (await request.json()) as { eventId?: string };
+      if (!body.eventId) return errorResponse('eventId is required');
+      const hasLegacyCurrentUser = await hasLegacyNextRefCurrentUserColumn(env);
+
+      const rawState = await ensureNextRefStateForEvent(env, body.eventId);
+      const state = rawState ? await alignPendingCurrentRef(env, rawState) : null;
+      if (!state) return errorResponse('No next ref state found', 404);
+      if (state.status !== 'Pending Decision') return errorResponse('Cannot skip after duty has been accepted', 400);
+      const currentSlot = await env.DB.prepare('SELECT user_id FROM ref_roster WHERE id = ?1 LIMIT 1')
+        .bind(state.current_ref_slot_id)
+        .first<{ user_id: string }>();
+      if (!currentSlot?.user_id) return errorResponse('Admin repair required: unable to resolve referee user', 409);
+      const hasAlreadySkipped = await env.DB.prepare('SELECT id FROM next_ref_skips WHERE event_id = ?1 AND ref_slot_id = ?2 LIMIT 1')
+        .bind(body.eventId, state.current_ref_slot_id)
+        .first<{ id: string }>();
+      if (hasAlreadySkipped) return errorResponse('This roster slot has already been skipped for this away game', 400);
+
+      await env.DB.prepare('INSERT INTO next_ref_skips (id, event_id, ref_slot_id, user_id, skipped_at) VALUES (?1, ?2, ?3, ?4, ?5)')
+        .bind(createId('refskip'), body.eventId, state.current_ref_slot_id, currentSlot.user_id, nowIso())
+        .run();
+
+      const nextEligible = await getNextEligibleRosterUser(env, body.eventId, state.current_ref_slot_id);
+      if (!nextEligible) return errorResponse('Ref roster is empty', 400);
+
+      if (hasLegacyCurrentUser) {
+        await env.DB.prepare(
+          'UPDATE next_ref_state SET current_ref_slot_id = ?1, current_user_id = ?2, status = ?3, accepted_at = NULL, updated_at = ?4 WHERE event_id = ?5',
+        )
+          .bind(nextEligible.id, nextEligible.user_id, 'Pending Decision', nowIso(), body.eventId)
+          .run();
+      } else {
+        await env.DB.prepare(
+          'UPDATE next_ref_state SET current_ref_slot_id = ?1, status = ?2, accepted_at = NULL, updated_at = ?3 WHERE event_id = ?4',
+        )
+          .bind(nextEligible.id, 'Pending Decision', nowIso(), body.eventId)
+          .run();
+      }
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }

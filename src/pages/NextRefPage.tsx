@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { acceptNextRef, completeNextRef, getNextRef, getNextRefHistory, passNextRef } from '../services/dataService';
+import { acceptNextRef, completeNextRef, getNextRef, getNextRefHistory, passNextRef, skipNextRef } from '../services/dataService';
 import type { NextRefHistoryEntry, NextRefState } from '../types/models';
 import { useAppState } from '../App';
 import { formatLocalDateTime, getBrowserTimeZone } from '../utils/date';
@@ -11,7 +11,7 @@ export function NextRefPage() {
   const [history, setHistory] = useState<NextRefHistoryEntry[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [isWorking, setWorking] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'complete' | null>(null);
+  const [pendingAction, setPendingAction] = useState<'pass' | 'accept' | 'skip' | 'complete' | null>(null);
   const [error, setError] = useState('');
   const { canWrite, canEditLineup, isVisitor, currentUser, refreshAppData } = useAppState();
   const [showRosterModal, setShowRosterModal] = useState(false);
@@ -45,11 +45,13 @@ export function NextRefPage() {
   const canHandlePendingDecision = canCurrentRefAct || canAdminOverride;
   const canPass = canWrite && !isWorking && !isAccepted && !!state?.event && !!state?.currentRefUserId && canHandlePendingDecision;
   const canAccept = canWrite && !isWorking && !isAccepted && !!state?.event && !!state?.currentRefUserId && canHandlePendingDecision;
+  const canSkip = canEditLineup && !isWorking && !isAccepted && !!state?.event && !!state?.currentRefUserId;
   const canComplete = canEditLineup && !!state?.event && !isWorking;
 
-  const confirmAction = (actionType: 'pass' | 'accept' | 'complete') => {
+  const confirmAction = (actionType: 'pass' | 'accept' | 'skip' | 'complete') => {
     if (actionType === 'pass') return window.confirm('Are you sure you want to pass referee duty?');
     if (actionType === 'accept') return window.confirm('Are you sure you want to accept referee duty?');
+    if (actionType === 'skip') return window.confirm('Are you sure you want to skip this pending referee and move to the next person?');
     return window.confirm('Are you sure you want to complete this referee duty?');
   };
 
@@ -60,9 +62,9 @@ export function NextRefPage() {
 
 
   const currentRosterIndex = useMemo(() => {
-    if (!state?.roster.length || !state.currentRefUserId) return -1;
-    return state.roster.findIndex((entry) => entry.userId === state.currentRefUserId);
-  }, [state?.roster, state?.currentRefUserId]);
+    if (!state?.roster.length || !state.currentRefSlotId) return -1;
+    return state.roster.findIndex((entry) => entry.slotId === state.currentRefSlotId);
+  }, [state?.roster, state?.currentRefSlotId]);
 
   const rosterPreview = useMemo(() => {
     if (!state?.roster.length) return [];
@@ -74,7 +76,7 @@ export function NextRefPage() {
     });
   }, [state?.roster, currentRosterIndex]);
 
-  const runAction = async (actionType: 'pass' | 'accept' | 'complete', action: () => Promise<NextRefState>) => {
+  const runAction = async (actionType: 'pass' | 'accept' | 'skip' | 'complete', action: () => Promise<NextRefState>) => {
     setWorking(true);
     setPendingAction(actionType);
     try {
@@ -143,7 +145,7 @@ export function NextRefPage() {
               void runAction('pass', () => passNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
-            {pendingAction === 'pass' ? 'Passing…' : 'Pass Duty'}
+            {pendingAction === 'pass' ? 'Passing…' : 'Pass'}
           </button>
           <button
             type="button"
@@ -154,8 +156,21 @@ export function NextRefPage() {
               void runAction('accept', () => acceptNextRef({ userId: state.currentRefUserId!, eventId: state.event!.id }));
             }}
           >
-            {pendingAction === 'accept' ? 'Accepting…' : 'Accept Duty'}
+            {pendingAction === 'accept' ? 'Accepting…' : 'Accept'}
           </button>
+          {canEditLineup && (
+            <button
+              type="button"
+              className={`secondary next-ref-action-btn ${pendingAction === 'skip' ? 'is-pending' : ''} ${!canSkip ? 'is-disabled' : ''}`}
+              disabled={!canSkip}
+              onClick={() => {
+                if (!state?.event || !confirmAction('skip')) return;
+                void runAction('skip', () => skipNextRef({ eventId: state.event!.id }));
+              }}
+            >
+              {pendingAction === 'skip' ? 'Skipping…' : 'Skip'}
+            </button>
+          )}
           <button
             type="button"
             className={`secondary next-ref-action-btn ${pendingAction === 'complete' ? 'is-pending' : ''} ${!canComplete ? 'is-disabled' : ''}`}
@@ -165,7 +180,7 @@ export function NextRefPage() {
               void runAction('complete', () => completeNextRef({ eventId: state.event!.id }));
             }}
           >
-            {pendingAction === 'complete' ? 'Completing…' : 'Complete Duty'}
+            {pendingAction === 'complete' ? 'Confirming…' : 'Confirmed'}
           </button>
         </div>
       </article>
@@ -191,9 +206,9 @@ export function NextRefPage() {
           {rosterPreview.map((entry) => (
             <p
               key={`preview-${entry.userId}-${entry.order}`}
-              className={`next-ref-roster-item ${entry.userId === state?.currentRefUserId ? 'is-current' : ''}`}
+              className={`next-ref-roster-item ${entry.slotId === state?.currentRefSlotId && !entry.skippedAt ? 'is-current' : ''} ${entry.skippedAt ? 'is-skipped' : ''}`}
             >
-              #{entry.order + 1} {entry.name}
+              #{entry.order + 1} <span>{entry.name}</span>
             </p>
           ))}
         </div>
@@ -210,9 +225,9 @@ export function NextRefPage() {
               {state?.roster.map((entry) => (
                 <p
                   key={`modal-${entry.userId}-${entry.order}`}
-                  className={`next-ref-roster-item ${entry.userId === state?.currentRefUserId ? 'is-current' : ''}`}
+                  className={`next-ref-roster-item ${entry.slotId === state?.currentRefSlotId && !entry.skippedAt ? 'is-current' : ''} ${entry.skippedAt ? 'is-skipped' : ''}`}
                 >
-                  #{entry.order + 1} {entry.name}
+                  #{entry.order + 1} <span>{entry.name}</span>
                 </p>
               ))}
             </div>

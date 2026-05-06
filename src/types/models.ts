@@ -93,11 +93,14 @@ export interface NextRefRosterEntry {
   userId: string;
   name: string;
   order: number;
+  slotId: string;
+  skippedAt?: string | null;
 }
 
 export interface NextRefState {
   event: TeamEvent | null;
   currentRefUserId: string | null;
+  currentRefSlotId: string | null;
   currentRefName: string | null;
   status: NextRefStatus | null;
   runningBalance: number;

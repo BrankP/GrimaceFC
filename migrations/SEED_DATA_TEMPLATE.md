@@ -87,7 +87,12 @@ This worksheet now mirrors the current requested seed set.
 |---|---|---|---|
 <!-- Dummy example row: | nrp-001 | evt-007 | usr-003 | 2026-05-01T01:00:00Z | -->
 
-## 9) `next_ref_history`
+## 9) `next_ref_skips`
+| id | event_id | ref_slot_id | user_id | skipped_at (ISO) |
+|----|----------|-------------|---------|------------------|
+<!-- Dummy example row: | refskip-001 | evt-008 | refslot-003 | usr-004 | 2026-05-01T00:00:00Z | -->
+
+## 10) `next_ref_history`
 | id | event_id | referee_user_id | final_balance | passed_json | accepted_at (ISO) | completed_at (ISO) |
 |---|---|---|---:|---|---|---|
 | nrh-001 | evt-003 | usr-012 | 0 | [] | 2026-04-11T05:00:00Z | 2026-04-11T05:00:00Z |
