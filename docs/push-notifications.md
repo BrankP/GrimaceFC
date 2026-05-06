@@ -73,22 +73,37 @@ The logs intentionally avoid exposing VAPID private keys and full endpoint value
 
 ## Admin debug endpoint
 
-Admins can inspect push state without exposing secrets:
+Admins can inspect push state without exposing secrets. Windows Terminal can run either Command Prompt or PowerShell; if your prompt looks like `C:\...>`, you are in Command Prompt, so use `curl.exe` instead of PowerShell-only commands such as `Invoke-RestMethod`.
+
+Command Prompt / Windows Terminal default profile:
+
+```cmd
+curl.exe -H "x-team-passcode: adminadmin" "https://grimacefc.itsimple-brad.workers.dev/api/push/debug"
+```
+
+PowerShell profile:
 
 ```powershell
-$Passcode = "<admin passcode>"
-Invoke-RestMethod -Uri "https://<your-domain>/api/push/debug" -Headers @{ "x-team-passcode" = $Passcode }
+$Passcode = "adminadmin"
+Invoke-RestMethod -Uri "https://grimacefc.itsimple-brad.workers.dev/api/push/debug" -Headers @{ "x-team-passcode" = $Passcode }
 ```
+
+Make sure the URL starts with `https://` only once. For example, use `https://grimacefc.itsimple-brad.workers.dev/api/push/debug`, not `https://https://grimacefc.itsimple-brad.workers.dev/api/push/debug`.
 
 The endpoint returns:
 
+- a `summary` with total users, users who want notifications, users who can currently receive pushes, users who need to resubscribe, and total stored subscriptions
 - whether VAPID public/private keys are present, public key length, and subject
 - users and notification preferences
+- `pushEnabled`, which means the user's preference allows notifications and at least one push subscription is stored
+- `needsResubscribe`, which means the user wants notifications but has no stored subscription; ask that user to open Settings and save **All messages** or **Mentions only** on the device that should receive pushes
 - subscription counts per user
 - device/browser metadata
 - last subscription update time
 - last push attempt time
 - last success/failure details
+
+If old subscriptions show `null` for device metadata, that only means they were saved before diagnostic metadata existed. Ask the user to resave notification settings on that device to refresh the metadata.
 
 ## Manual test cases
 

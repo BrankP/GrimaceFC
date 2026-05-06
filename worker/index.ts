@@ -1697,7 +1697,10 @@ async function handleApi(request: Request, env: Env) {
         userId: string;
         name: string;
         notificationPreference: string;
+        notificationPreferenceEnabled: boolean;
         pushEnabled: boolean;
+        hasPushSubscription: boolean;
+        needsResubscribe: boolean;
         subscriptionCount: number;
         lastSubscriptionUpdateAt: string | null;
         lastPushAttemptAt: string | null;
@@ -1706,11 +1709,15 @@ async function handleApi(request: Request, env: Env) {
       }>();
 
       for (const row of rows.results) {
+        const preferenceEnabled = row.notification_preference !== 'disabled';
         const current = usersById.get(row.user_id) ?? {
           userId: row.user_id,
           name: row.user_name,
           notificationPreference: row.notification_preference,
-          pushEnabled: row.notification_preference !== 'disabled',
+          notificationPreferenceEnabled: preferenceEnabled,
+          pushEnabled: false,
+          hasPushSubscription: false,
+          needsResubscribe: preferenceEnabled,
           subscriptionCount: 0,
           lastSubscriptionUpdateAt: null,
           lastPushAttemptAt: null,
@@ -1723,9 +1730,9 @@ async function handleApi(request: Request, env: Env) {
           if (!current.lastSubscriptionUpdateAt || (row.updated_at && row.updated_at > current.lastSubscriptionUpdateAt)) {
             current.lastSubscriptionUpdateAt = row.updated_at;
           }
-          if (!current.lastPushAttemptAt || (row.last_attempt_at && row.last_attempt_at > current.lastPushAttemptAt)) {
+          if (row.last_attempt_at && (!current.lastPushAttemptAt || row.last_attempt_at > current.lastPushAttemptAt)) {
             current.lastPushAttemptAt = row.last_attempt_at;
-            current.lastPushStatus = row.last_success_at === row.last_attempt_at ? 'accepted' : row.last_failure_reason;
+            current.lastPushStatus = row.last_success_at === row.last_attempt_at ? 'accepted' : row.last_failure_reason ?? 'failed';
           }
           current.subscriptions.push({
             id: row.subscription_id,
@@ -1749,16 +1756,45 @@ async function handleApi(request: Request, env: Env) {
         usersById.set(row.user_id, current);
       }
 
+      const users = Array.from(usersById.values()).map((user) => {
+        const hasPushSubscription = user.subscriptionCount > 0;
+        const needsResubscribe = user.notificationPreferenceEnabled && !hasPushSubscription;
+        return {
+          ...user,
+          pushEnabled: user.notificationPreferenceEnabled && hasPushSubscription,
+          hasPushSubscription,
+          needsResubscribe,
+          lastPushStatus: user.lastPushAttemptAt ? user.lastPushStatus : null,
+        };
+      });
+      const summary = users.reduce(
+        (counts, user) => {
+          counts.totalUsers += 1;
+          if (user.notificationPreferenceEnabled) counts.notificationPreferenceEnabled += 1;
+          if (user.pushEnabled) counts.pushEnabled += 1;
+          if (user.needsResubscribe) counts.needsResubscribe += 1;
+          counts.totalSubscriptions += user.subscriptionCount;
+          return counts;
+        },
+        { totalUsers: 0, notificationPreferenceEnabled: 0, pushEnabled: 0, needsResubscribe: 0, totalSubscriptions: 0 },
+      );
+
       return jsonResponse({
         generatedAt: nowIso(),
+        summary,
+        notes: [
+          'pushEnabled means the user has notifications enabled by preference and at least one stored push subscription.',
+          'needsResubscribe means the user wants notifications but currently has no stored subscription; ask them to open Settings and save All messages or Mentions only on the device that should receive pushes.',
+          'Null device metadata means the subscription was saved before diagnostic metadata was added; resaving notifications on that device will refresh it.',
+        ],
         vapid: {
           hasPublicKey: Boolean(env.VAPID_PUBLIC_KEY),
           publicKeyLength: env.VAPID_PUBLIC_KEY?.length ?? 0,
           hasPrivateKey: Boolean(env.VAPID_PRIVATE_KEY),
           subject: env.VAPID_SUBJECT ?? 'mailto:admin@grimacefc.local',
         },
-        users: Array.from(usersById.values()),
-      }, 200, { 'Cache-Control': 'no-store' });
+        users,
+      }, 200, { 'Cache-Control': 'no-store, no-cache, max-age=0, must-revalidate', Pragma: 'no-cache' });
     }
 
     if (pathname === '/api/push/subscription' && method === 'POST') {
