@@ -7,7 +7,7 @@ import { UpcomingGamesPage } from './pages/UpcomingGamesPage';
 import { NextGamePage } from './pages/NextGamePage';
 import { NextRefPage } from './pages/NextRefPage';
 import { TeamStatsPage } from './pages/TeamStatsPage';
-import { clearAvailability, loadAppData, postAvailability, postEventScore, postLineup, postMessage, saveNotificationPreference, upsertUser } from './services/dataService';
+import { clearAvailability, loadAppData, patchMessage, postAvailability, postEventScore, postLineup, postMessage, removeMessage, saveNotificationPreference, toggleReaction, upsertUser } from './services/dataService';
 import { canUsePushNotifications, disablePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
 import type { AvailabilityStatus, DataStore, Lineup, NotificationPreference, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
@@ -21,6 +21,9 @@ type AppState = {
   isVisitor: boolean;
   upsertUserByName: (payload: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => Promise<void>;
   addMessage: (text: string) => Promise<void>;
+  editMessage: (messageId: string, text: string) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
+  toggleMessageReaction: (messageId: string, emoji: string) => Promise<void>;
   saveNickname: (userId: string, nickname: string) => Promise<void>;
   saveLineup: (lineup: Lineup) => Promise<void>;
   saveEventScore: (payload: {
@@ -369,6 +372,27 @@ export default function App() {
     });
   };
 
+  const editMessage = async (messageId: string, text: string) => {
+    if (!currentUserId || !canWrite) return;
+    await withWriteGuard(async () => {
+      await patchMessage({ messageId, userId: currentUserId, text });
+    });
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    if (!currentUserId || !canWrite) return;
+    await withWriteGuard(async () => {
+      await removeMessage({ messageId, userId: currentUserId });
+    });
+  };
+
+  const toggleMessageReaction = async (messageId: string, emoji: string) => {
+    if (!currentUserId || !canWrite) return;
+    await withWriteGuard(async () => {
+      await toggleReaction({ messageId, userId: currentUserId, emoji });
+    });
+  };
+
   const saveNickname = async (userId: string, nickname: string) => {
     if (!canWrite) return;
     const user = data?.users.find((u) => u.id === userId);
@@ -453,6 +477,9 @@ export default function App() {
         isVisitor,
         upsertUserByName,
         addMessage,
+        editMessage,
+        deleteMessage,
+        toggleMessageReaction,
         saveNickname,
         saveLineup,
         saveEventScore,

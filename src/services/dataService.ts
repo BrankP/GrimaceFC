@@ -43,6 +43,15 @@ export const upsertUser = (payload: { id?: string; name: string; nickname?: stri
 export const postMessage = (payload: { userId: string; text: string }) =>
   api<Message>('/messages', { method: 'POST', body: JSON.stringify(payload) });
 
+export const patchMessage = (payload: { messageId: string; userId: string; text: string }) =>
+  api<Message>(`/messages/${encodeURIComponent(payload.messageId)}`, { method: 'PATCH', body: JSON.stringify({ userId: payload.userId, text: payload.text }) });
+
+export const removeMessage = (payload: { messageId: string; userId: string }) =>
+  api<{ ok: true }>(`/messages/${encodeURIComponent(payload.messageId)}`, { method: 'DELETE', body: JSON.stringify({ userId: payload.userId }) });
+
+export const toggleReaction = (payload: { messageId: string; userId: string; emoji: string }) =>
+  api<Message>(`/messages/${encodeURIComponent(payload.messageId)}/reactions`, { method: 'POST', body: JSON.stringify({ userId: payload.userId, emoji: payload.emoji }) });
+
 export const getVapidPublicKey = () => api<{ publicKey: string | null }>('/push/vapid-public-key');
 
 export const savePushSubscription = (payload: { userId: string; subscription: PushSubscriptionJSON }) =>
