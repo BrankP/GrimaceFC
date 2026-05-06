@@ -40,6 +40,26 @@ type AppState = {
   refreshAppData: () => Promise<void>;
 };
 
+const PUSH_RESUBSCRIBE_CAMPAIGN_ID = '2026-05-06-force-resubscribe-v1';
+
+const getPushResubscribeCampaignKey = (userId: string) => `grimacefc.pushResubscribe.${PUSH_RESUBSCRIBE_CAMPAIGN_ID}.${userId}`;
+
+const hasHandledPushResubscribeCampaign = (userId: string) => {
+  try {
+    return Boolean(localStorage.getItem(getPushResubscribeCampaignKey(userId)));
+  } catch {
+    return false;
+  }
+};
+
+const markPushResubscribeCampaignHandled = (userId: string, status: string) => {
+  try {
+    localStorage.setItem(getPushResubscribeCampaignKey(userId), JSON.stringify({ status, at: new Date().toISOString() }));
+  } catch {
+    // best effort only
+  }
+};
+
 const AppContext = createContext<AppState | null>(null);
 
 export const useAppState = () => {
@@ -65,9 +85,12 @@ export default function App() {
   const [notificationPreference, setNotificationPreference] = useState<NotificationPreference>('all_chats');
   const [savedNotificationPreference, setSavedNotificationPreference] = useState<NotificationPreference>('all_chats');
   const [settingsStatus, setSettingsStatus] = useState('');
+  const [showPushResubscribePrompt, setShowPushResubscribePrompt] = useState(false);
+  const [pushResubscribeStatus, setPushResubscribeStatus] = useState('');
   const navigate = useNavigate();
   const isFetchingRef = useRef(false);
   const lastRefreshRef = useRef(0);
+  const autoPushSyncKeyRef = useRef<string | null>(null);
 
   const refreshData = async (minIntervalMs = 0, force = false) => {
     const now = Date.now();
@@ -190,6 +213,61 @@ export default function App() {
     setSavedNotificationPreference(pref);
   }, [currentUser, isVisitor]);
 
+  useEffect(() => {
+    if (!currentUserId || !currentUser || isVisitor) return;
+    const pref = currentUser.notificationPreference ?? 'all_chats';
+    if (pref === 'disabled') return;
+    if (!canUsePushNotifications() || Notification.permission !== 'granted') return;
+
+    const syncKey = `${currentUserId}:${pref}:granted`;
+    if (autoPushSyncKeyRef.current === syncKey) return;
+    autoPushSyncKeyRef.current = syncKey;
+
+    console.info('[push] auto_sync_start', { userId: currentUserId, preference: pref, at: new Date().toISOString() });
+    void syncPushSubscription(currentUserId).then((result) => {
+      if (result.ok) {
+        setPushStatus('enabled');
+        setPushErrorDetail('');
+        markPushResubscribeCampaignHandled(currentUserId, 'auto_synced');
+        setShowPushResubscribePrompt(false);
+        console.info('[push] auto_sync_success', { userId: currentUserId, preference: pref, at: new Date().toISOString() });
+        return;
+      }
+
+      setPushFailure(result.reason, result.detail);
+      if (!hasHandledPushResubscribeCampaign(currentUserId)) {
+        setPushResubscribeStatus(result.detail ?? `Could not refresh notifications automatically: ${result.reason}`);
+        setShowPushResubscribePrompt(true);
+      }
+      console.info('[push] auto_sync_failed', {
+        userId: currentUserId,
+        preference: pref,
+        reason: result.reason,
+        detail: result.detail,
+        at: new Date().toISOString(),
+      });
+    });
+  }, [currentUserId, currentUser, isVisitor]);
+
+  useEffect(() => {
+    if (!currentUserId || !currentUser || isVisitor) return;
+    const pref = currentUser.notificationPreference ?? 'all_chats';
+    if (pref === 'disabled') return;
+    if (!canUsePushNotifications()) return;
+    if (hasHandledPushResubscribeCampaign(currentUserId)) return;
+    if (Notification.permission === 'granted') return;
+
+    setPushResubscribeStatus('');
+    setShowPushResubscribePrompt(true);
+    console.info('[push] resubscribe_campaign_prompt_shown', {
+      userId: currentUserId,
+      preference: pref,
+      permission: Notification.permission,
+      campaignId: PUSH_RESUBSCRIBE_CAMPAIGN_ID,
+      at: new Date().toISOString(),
+    });
+  }, [currentUserId, currentUser, isVisitor]);
+
   const saveNotificationSettings = async () => {
     if (!currentUserId || isVisitor) return;
     setSettingsStatus('Saving...');
@@ -199,6 +277,11 @@ export default function App() {
         await saveNotificationPreference({ userId: currentUserId, preference: 'disabled' });
         await disablePushNotifications(currentUserId);
         await refreshData(0, true);
+        autoPushSyncKeyRef.current = null;
+        markPushResubscribeCampaignHandled(currentUserId, 'disabled');
+        setShowPushResubscribePrompt(false);
+        setPushStatus('idle');
+        setPushErrorDetail('');
         setSavedNotificationPreference('disabled');
         setSettingsStatus('Saved ✓');
       } catch (err) {
@@ -234,11 +317,74 @@ export default function App() {
     try {
       await saveNotificationPreference({ userId: currentUserId, preference: notificationPreference });
       await refreshData(0, true);
+      setPushStatus('enabled');
+      setPushErrorDetail('');
+      autoPushSyncKeyRef.current = `${currentUserId}:${notificationPreference}:granted`;
+      markPushResubscribeCampaignHandled(currentUserId, 'settings_synced');
+      setShowPushResubscribePrompt(false);
       setSavedNotificationPreference(notificationPreference);
       setSettingsStatus('Saved ✓');
     } catch (err) {
       setSettingsStatus(err instanceof Error ? err.message : 'Failed to save settings.');
     }
+  };
+
+  const handlePushResubscribeNow = async () => {
+    if (!currentUserId || !currentUser || isVisitor) return;
+    if (!canUsePushNotifications()) {
+      setPushResubscribeStatus('Push notifications are not supported on this device/browser.');
+      markPushResubscribeCampaignHandled(currentUserId, 'unsupported');
+      return;
+    }
+
+    const pref = currentUser.notificationPreference === 'disabled' ? 'all_chats' : currentUser.notificationPreference ?? 'all_chats';
+    setPushResubscribeStatus('Refreshing notification subscription...');
+    console.info('[push] resubscribe_campaign_start', { userId: currentUserId, preference: pref, campaignId: PUSH_RESUBSCRIBE_CAMPAIGN_ID, at: new Date().toISOString() });
+
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    console.info('[push] resubscribe_campaign_permission_result', { userId: currentUserId, permission, campaignId: PUSH_RESUBSCRIBE_CAMPAIGN_ID, at: new Date().toISOString() });
+
+    if (permission === 'denied') {
+      setPushStatus('denied');
+      setPushResubscribeStatus('Notifications are blocked in this browser/device. Enable them in site settings, then open Settings in Grimace FC to try again.');
+      markPushResubscribeCampaignHandled(currentUserId, 'denied');
+      return;
+    }
+
+    if (permission !== 'granted') {
+      setPushResubscribeStatus('Notification permission was not granted. You can enable notifications later from Settings.');
+      markPushResubscribeCampaignHandled(currentUserId, 'permission_not_granted');
+      setShowPushResubscribePrompt(false);
+      return;
+    }
+
+    const result = await syncPushSubscription(currentUserId);
+    if (!result.ok) {
+      setPushFailure(result.reason, result.detail);
+      setPushResubscribeStatus(result.detail ?? `Could not refresh notifications: ${result.reason}`);
+      return;
+    }
+
+    try {
+      await saveNotificationPreference({ userId: currentUserId, preference: pref });
+      await refreshData(0, true);
+      setNotificationPreference(pref);
+      setSavedNotificationPreference(pref);
+      setPushStatus('enabled');
+      setPushErrorDetail('');
+      markPushResubscribeCampaignHandled(currentUserId, 'synced');
+      autoPushSyncKeyRef.current = `${currentUserId}:${pref}:granted`;
+      setPushResubscribeStatus('Notifications refreshed ✓');
+      setShowPushResubscribePrompt(false);
+    } catch (err) {
+      setPushResubscribeStatus(err instanceof Error ? err.message : 'Subscription refreshed, but preference save failed.');
+    }
+  };
+
+  const dismissPushResubscribePrompt = () => {
+    if (currentUserId) markPushResubscribeCampaignHandled(currentUserId, 'dismissed');
+    setShowPushResubscribePrompt(false);
+    setPushResubscribeStatus('');
   };
 
   const wipeClientDataAndLogout = async () => {
@@ -522,6 +668,21 @@ export default function App() {
           </main>
         )}
 
+
+        {showPushResubscribePrompt && !isVisitor && currentUser && (
+          <div className="modal-backdrop" role="dialog" aria-modal="true">
+            <div className="card modal">
+              <h3>🔔 Refresh notifications</h3>
+              <p className="muted">We have updated Grimace FC notifications. Please refresh this device once so chat alerts keep working reliably.</p>
+              <p className="muted">This is a one-time request for this update.</p>
+              <p className="muted" style={{ minHeight: 20 }}>{pushResubscribeStatus}</p>
+              <div className="row">
+                <button type="button" onClick={() => void handlePushResubscribeNow()}>Refresh notifications</button>
+                <button type="button" className="secondary" onClick={dismissPushResubscribePrompt}>Not now</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {showSettings && !isVisitor && currentUser && (
           <div className="modal-backdrop" role="dialog" aria-modal="true">

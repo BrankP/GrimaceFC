@@ -6,7 +6,7 @@ The Grimace FC push flow is:
 
 1. The React app asks for notification permission from the settings modal.
 2. The app registers `/service-worker.js` and waits for `navigator.serviceWorker.ready`.
-3. The app fetches `/api/push/vapid-public-key`, creates or reuses a `PushSubscription`, and posts it to `/api/push/subscription` with non-secret device metadata.
+3. The app fetches `/api/push/vapid-public-key`, creates or reuses a `PushSubscription`, and posts it to `/api/push/subscription` with non-secret device metadata. If a returning user already granted browser notification permission and their preference is not disabled, the app also attempts this sync automatically on load so deleted/missing DB rows can self-heal without another permission prompt. For the `2026-05-06-force-resubscribe-v1` rollout, users who have not already handled the campaign see a one-time refresh prompt on load; browser permission is still requested only after they tap the prompt button because browsers require a user gesture.
 4. The Cloudflare Worker stores the subscription in D1.
 5. When a chat message is posted to `/api/messages`, the Worker resolves recipients by notification preference:
    - `all_chats`: all users except the sender.
@@ -55,6 +55,8 @@ Client logs are emitted to the browser console with the `[push]` prefix for:
 - VAPID key mismatch renewal
 - subscription creation/reuse
 - subscription save success/failure
+- automatic subscription self-heal on app load when permission is already granted
+- one-time force-resubscribe campaign prompt results
 - disable/unsubscribe flow
 
 Worker logs are structured JSON written with event names such as:
@@ -103,7 +105,9 @@ The endpoint returns:
 - last push attempt time
 - last success/failure details
 
-If old subscriptions show `null` for device metadata, that only means they were saved before diagnostic metadata existed. Ask the user to resave notification settings on that device to refresh the metadata.
+If old subscriptions show `null` for device metadata, that only means they were saved before diagnostic metadata existed. Ask the user to resave notification settings on that device to refresh the metadata, or have them simply open the app if browser notification permission is already granted; the app will now auto-sync the stored subscription on load. Users who have not already handled the `2026-05-06-force-resubscribe-v1` campaign will see a one-time **Refresh notifications** prompt on load. Clicking **Not now**, denying permission, or completing the sync records that campaign locally so the same device is not nagged repeatedly.
+
+The pasted production debug output from May 6, 2026 showed `pushEnabled: 3`, `needsResubscribe: 20`, and `totalSubscriptions: 3`. That means VAPID configuration is present, but only three browser/device installs currently have saved push subscriptions. Users listed with `needsResubscribe: true` need to open the app on the device that should receive notifications and save **All messages** or **Mentions only**. If they had already granted notification permission before, opening the app after this fix should also attempt to restore the saved DB subscription automatically. If permission has not been granted yet, the one-time prompt asks them to refresh notifications with a user gesture so the browser permission prompt can appear.
 
 ## Manual test cases
 
