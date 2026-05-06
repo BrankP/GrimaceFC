@@ -422,11 +422,10 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .team-last-five-dot.is-most-recent.is-draw,
 .team-last-five-dot.is-most-recent.is-empty { box-shadow: 0 0 0 2px #d3d3de; }
 .message-reaction-row { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; margin-top: .45rem; }
-.reaction-add-btn,
 .reaction-tally,
 .reaction-details-btn,
-.message-more-btn,
-.emoji-picker-option {
+.emoji-picker-option,
+.emoji-more-btn {
   min-height: 32px;
   border-radius: 999px;
   padding: .22rem .5rem;
@@ -434,14 +433,14 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
   border: 1px solid #41495d;
   color: #d6dbe8;
 }
-.reaction-add-btn { color: #a8b0c7; font-size: 1.05rem; min-width: 36px; }
-.reaction-add-btn:disabled { opacity: .48; cursor: not-allowed; }
 .reaction-tally { display: inline-flex; align-items: center; gap: .25rem; background: #242b3b; }
 .reaction-tally.reacted-by-me { background: #44306f; border-color: #8f6aff; color: #fff; }
 .reaction-details-btn { font-size: .75rem; background: transparent; color: #b9c1d6; }
-.message-more-btn { float: right; margin-top: -.2rem; min-width: 34px; background: transparent; }
-.emoji-picker { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: .25rem; margin-top: .45rem; padding: .45rem; border: 1px solid #41495d; border-radius: 12px; background: #171d2b; }
+.message-action-modal { gap: .7rem; }
+.message-action-section { display: grid; gap: .45rem; }
+.action-emoji-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .3rem; }
 .emoji-picker-option { border-radius: 10px; min-height: 38px; padding: .2rem; font-size: 1.2rem; background: #252c3e; }
+.emoji-more-btn { border-radius: 10px; min-height: 38px; grid-column: span 2; background: #39245f; font-size: .85rem; }
 .reaction-details-list { display: grid; gap: .35rem; }
 .reaction-detail-row { display: flex; align-items: center; gap: .55rem; padding: .45rem .55rem; background: #2a1b47; border-radius: 10px; }
 .reaction-detail-emoji { font-size: 1.3rem; min-width: 1.8rem; }
@@ -449,5 +448,5 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .message-edit-input { width: 100%; min-height: 140px; resize: vertical; padding: .7rem; border-radius: 10px; border: 1px solid #6448b0; background: #1b0d33; color: var(--text); }
 .full-width { width: 100%; }
 @media (max-width: 520px) {
-  .emoji-picker { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .action-emoji-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }

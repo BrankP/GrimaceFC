@@ -8,13 +8,15 @@ const formatDateHeading = (isoDate: string) =>
 const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
-const EMOJI_OPTIONS = [
-  '😀', '😃', '😄', '😁', '😆', '😂', '🤣', '😊', '😍', '😘', '😎', '🤩',
+const QUICK_REACTION_OPTIONS = ['😂', '😁', '😒', '🥲', '🤗', '🫡', '🫠', '🤑', '🤬', '💩'];
+const EMOJI_OPTIONS = Array.from(new Set([
+  ...QUICK_REACTION_OPTIONS,
+  '😀', '😃', '😄', '😆', '🤣', '😊', '😍', '😘', '😎', '🤩',
   '🥳', '😬', '😅', '😇', '🙂', '🙃', '😉', '😌', '😋', '🤪', '🤨', '🧐',
-  '🤓', '😤', '😢', '😭', '😡', '🤬', '🤯', '🥶', '😱', '😴', '🤢', '🤮',
+  '🤓', '😤', '😢', '😭', '😡', '🤯', '🥶', '😱', '😴', '🤢', '🤮',
   '👍', '👎', '👏', '🙌', '💪', '🙏', '🤝', '👊', '✌️', '🤞', '👀', '🧠',
   '❤️', '💜', '💙', '💚', '💛', '🧡', '🔥', '💯', '⭐', '⚽', '🏆', '🍻',
-];
+]));
 
 export function ChatPage() {
   const {
@@ -35,11 +37,11 @@ export function ChatPage() {
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
-  const [emojiPickerMessageId, setEmojiPickerMessageId] = useState<string | null>(null);
   const [actionMessageId, setActionMessageId] = useState<string | null>(null);
   const [detailsMessageId, setDetailsMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageText, setEditingMessageText] = useState('');
+  const [showAllActionEmojis, setShowAllActionEmojis] = useState(false);
   const longPressTimer = useRef<number | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -48,6 +50,7 @@ export function ChatPage() {
   const getReactionUserNames = (reaction: Message['reactions'][number]) => reaction.users.map((user) => getDisplayName(user.id)).join(', ');
   const actionMessage = actionMessageId ? messages.find((message) => message.id === actionMessageId) ?? null : null;
   const detailsMessage = detailsMessageId ? messages.find((message) => message.id === detailsMessageId) ?? null : null;
+  const additionalActionEmojis = EMOJI_OPTIONS.filter((emoji) => !QUICK_REACTION_OPTIONS.includes(emoji));
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -154,7 +157,7 @@ export function ChatPage() {
     if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current);
     longPressTimer.current = window.setTimeout(() => {
       setActionMessageId(messageId);
-      setEmojiPickerMessageId(null);
+      setShowAllActionEmojis(false);
     }, 550);
   };
 
@@ -202,8 +205,6 @@ export function ChatPage() {
           <div key={group.date} className="chat-day-group">
             <p className="chat-date-divider">{formatDateHeading(group.messages[0].createdAt)}</p>
             {group.messages.map((message) => {
-              const isComposer = currentUser?.id === message.userId;
-              const isPickerOpen = emojiPickerMessageId === message.id;
               return (
                 <article
                   className="bubble modern-bubble"
@@ -229,42 +230,24 @@ export function ChatPage() {
                   </div>
                   <p>{renderTaggedText(message.text)}</p>
                   {message.editedAt && <small className="edited-label">edited</small>}
-                  <div className="message-reaction-row">
-                    <button
-                      type="button"
-                      className="reaction-add-btn"
-                      aria-label={canWrite ? 'Add reaction' : 'Visitors cannot react'}
-                      disabled={!canWrite}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (!canWrite) return;
-                        setEmojiPickerMessageId((current) => (current === message.id ? null : message.id));
-                      }}
-                    >
-                      ☺
-                    </button>
-                    {message.reactions.map((reaction) => (
-                      <button
-                        type="button"
-                        className={`reaction-tally${reaction.users.some((user) => user.id === currentUser?.id) ? ' reacted-by-me' : ''}`}
-                        key={reaction.emoji}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setDetailsMessageId(message.id);
-                        }}
-                        onDoubleClick={(event) => {
-                          event.stopPropagation();
-                          setDetailsMessageId(message.id);
-                        }}
-                        title={getReactionUserNames(reaction)}
-                      >
-                        <span>{reaction.emoji}</span>
-                        <span>{reaction.count}</span>
-                      </button>
-                    ))}
-                    {message.reactions.length > 0 && (
+                  {message.reactions.length > 0 && (
+                    <div className="message-reaction-row">
+                      {message.reactions.map((reaction) => (
+                        <button
+                          type="button"
+                          className={`reaction-tally${reaction.users.some((user) => user.id === currentUser?.id) ? ' reacted-by-me' : ''}`}
+                          key={reaction.emoji}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setDetailsMessageId(message.id);
+                          }}
+                          title={getReactionUserNames(reaction)}
+                        >
+                          <span>{reaction.emoji}</span>
+                          <span>{reaction.count}</span>
+                        </button>
+                      ))}
                       <button
                         type="button"
                         className="reaction-details-btn"
@@ -276,39 +259,7 @@ export function ChatPage() {
                       >
                         Details
                       </button>
-                    )}
-                  </div>
-                  {isPickerOpen && canWrite && (
-                    <div className="emoji-picker" onPointerDown={(event) => event.stopPropagation()}>
-                      {EMOJI_OPTIONS.map((emoji) => (
-                        <button
-                          type="button"
-                          className="emoji-picker-option"
-                          key={emoji}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            void toggleMessageReaction(message.id, emoji);
-                            setEmojiPickerMessageId(null);
-                          }}
-                        >
-                          {emoji}
-                        </button>
-                      ))}
                     </div>
-                  )}
-                  {isComposer && (
-                    <button
-                      type="button"
-                      className="message-more-btn"
-                      aria-label="Open message actions"
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setActionMessageId(message.id);
-                      }}
-                    >
-                      ⋯
-                    </button>
                   )}
                 </article>
               );
@@ -411,12 +362,62 @@ export function ChatPage() {
       )}
 
       {actionMessage && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" onClick={() => setActionMessageId(null)}>
-          <div className="card modal" onClick={(event) => event.stopPropagation()}>
-            <h3>Message actions</h3>
-            <ReactionDetails message={actionMessage} />
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setActionMessageId(null);
+            setShowAllActionEmojis(false);
+          }}
+        >
+          <div className="card modal message-action-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="message-action-section">
+              <p><strong>Add reaction</strong></p>
+              {canWrite ? (
+                <div className="action-emoji-grid">
+                  {QUICK_REACTION_OPTIONS.map((emoji) => (
+                    <button
+                      type="button"
+                      className="emoji-picker-option"
+                      key={emoji}
+                      onClick={() => {
+                        void toggleMessageReaction(actionMessage.id, emoji);
+                        setActionMessageId(null);
+                        setShowAllActionEmojis(false);
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="emoji-more-btn"
+                    onClick={() => setShowAllActionEmojis((current) => !current)}
+                  >
+                    More
+                  </button>
+                  {showAllActionEmojis && additionalActionEmojis.map((emoji) => (
+                    <button
+                      type="button"
+                      className="emoji-picker-option"
+                      key={emoji}
+                      onClick={() => {
+                        void toggleMessageReaction(actionMessage.id, emoji);
+                        setActionMessageId(null);
+                        setShowAllActionEmojis(false);
+                      }}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">Visitor mode: reactions are disabled.</p>
+              )}
+            </div>
             {currentUser?.id === actionMessage.userId && (
-              <div className="stack">
+              <>
                 <button type="button" onClick={() => openEditMessage(actionMessage)}>Edit message</button>
                 <button
                   type="button"
@@ -424,13 +425,23 @@ export function ChatPage() {
                   onClick={() => {
                     void deleteMessage(actionMessage.id);
                     setActionMessageId(null);
+                    setShowAllActionEmojis(false);
                   }}
                 >
                   Delete message
                 </button>
-              </div>
+              </>
             )}
-            <button type="button" className="secondary" onClick={() => setActionMessageId(null)}>Close</button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setActionMessageId(null);
+                setShowAllActionEmojis(false);
+              }}
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
