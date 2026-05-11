@@ -258,22 +258,29 @@ export function ChatPage() {
                   {message.editedAt && <small className="edited-label">edited</small>}
                   {message.reactions.length > 0 && (
                     <div className={isRevMessage ? 'message-reaction-row rev-message-footer' : 'message-reaction-row'}>
-                      {message.reactions.map((reaction) => (
-                        <button
-                          type="button"
-                          className={`reaction-tally${reaction.users.some((user) => user.id === currentUser?.id) ? ' reacted-by-me' : ''}`}
-                          key={reaction.emoji}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setDetailsMessageId(message.id);
-                          }}
-                          title={getReactionUserNames(reaction)}
-                        >
-                          <span>{reaction.emoji}</span>
-                          <span>{reaction.count}</span>
-                        </button>
-                      ))}
+                      {message.reactions.map((reaction) => {
+                        const reactedByCurrentUser = reaction.users.some((user) => user.id === currentUser?.id);
+                        const reactionActionLabel = `${reactedByCurrentUser ? 'Remove' : 'Add'} ${reaction.emoji} reaction`;
+
+                        return (
+                          <button
+                            type="button"
+                            className={`reaction-tally${reactedByCurrentUser ? ' reacted-by-me' : ''}`}
+                            key={reaction.emoji}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              if (!canWrite) return;
+                              void toggleMessageReaction(message.id, reaction.emoji);
+                            }}
+                            aria-label={canWrite ? reactionActionLabel : getReactionUserNames(reaction)}
+                            title={canWrite ? reactionActionLabel : getReactionUserNames(reaction)}
+                          >
+                            <span aria-hidden="true">{reaction.emoji}</span>
+                            <span>{reaction.count}</span>
+                          </button>
+                        );
+                      })}
                       <button
                         type="button"
                         className="reaction-details-btn"
