@@ -109,7 +109,8 @@ CREATE TABLE IF NOT EXISTS messages (
   user_id TEXT NOT NULL,
   text TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  edited_at TEXT
+  edited_at TEXT,
+  message_type TEXT NOT NULL DEFAULT 'normal' CHECK(message_type IN ('normal','rev'))
 );
 
 CREATE TABLE IF NOT EXISTS message_reactions (
