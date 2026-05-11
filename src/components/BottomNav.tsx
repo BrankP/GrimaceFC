@@ -1,11 +1,11 @@
 import { NavLink } from 'react-router-dom';
 
 const links = [
-  { to: '/upcoming', label: 'Upcoming' },
+  { to: '/upcoming', label: 'Events' },
   { to: '/chat', label: 'Chat' },
-  { to: '/game', label: 'Next Game' },
-  { to: '/next-ref', label: 'Next Ref' },
-  { to: '/team-stats', label: 'Team Stats' },
+  { to: '/game', label: 'Game' },
+  { to: '/next-ref', label: 'Ref' },
+  { to: '/team-stats', label: 'Stats' },
 ];
 
 export function BottomNav() {
