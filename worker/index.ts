@@ -33,6 +33,7 @@ const READ_LIMIT = 60;
 const WRITE_LIMIT = 20;
 const SYSTEM_USER_ID = 'grimace-bot';
 const DRIBL_LADDER_URL = 'https://mc-api.dribl.com/api/ladders?date_range=default&season=bam17yAKwX&competition=2PmjO2ojNZ&league=nmYJEzqaNz&ladder_type=regular&tenant=kbam1QjmwX&require_pools=true';
+const DRIBL_LADDER_PAGE_URL = 'https://mwfa.dribl.com/ladders/?competition=2PmjO2ojNZ&date_range=default&ladder_type=regular&league=nmYJEzqaNz&season=bam17yAKwX&timezone=Australia%2FSydney';
 const OUR_LADDER_TEAM_NAME = 'Allambie Beacon Hill United FC AL 06 Mixed B';
 
 const corsHeaders = {
@@ -1526,17 +1527,39 @@ const getSeasonLadderRows = async (env: Env) => {
   return seasonLadderPayloadFromRows(rows.results);
 };
 
-const refreshSeasonLadder = async (env: Env) => {
+class DriblLadderError extends Error {
+  status: number;
+
+  constructor(status: number, detail?: string) {
+    super(`Dribl ladder request failed: ${status}${detail ? ` (${detail})` : ''}`);
+    this.status = status;
+  }
+}
+
+const fetchDriblLadderPayload = async () => {
   const response = await fetch(DRIBL_LADDER_URL, {
     headers: {
-      accept: 'application/json',
+      accept: 'application/json, text/plain, */*',
+      'accept-language': 'en-AU,en;q=0.9',
+      origin: 'https://mwfa.dribl.com',
+      referer: DRIBL_LADDER_PAGE_URL,
+      'sec-fetch-dest': 'empty',
+      'sec-fetch-mode': 'cors',
+      'sec-fetch-site': 'same-site',
+      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
       'x-requested-with': 'XMLHttpRequest',
-      Referer: 'https://mwfa.dribl.com/',
     },
     method: 'GET',
   });
-  if (!response.ok) throw new Error(`Dribl ladder request failed: ${response.status}`);
-  const payload = await response.json();
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, ' ').trim().slice(0, 120);
+    throw new DriblLadderError(response.status, detail);
+  }
+  return response.json();
+};
+
+const refreshSeasonLadder = async (env: Env) => {
+  const payload = await fetchDriblLadderPayload();
   const updatedAt = nowIso();
   const rows = parseSeasonLadderPayload(payload, updatedAt);
   if (!rows.length) throw new Error('Dribl ladder response did not contain ladder rows');
@@ -1578,7 +1601,24 @@ const refreshSeasonLadder = async (env: Env) => {
     ).run();
   }
 
-  return getSeasonLadderRows(env);
+  return { ...(await getSeasonLadderRows(env)), refreshed: true };
+};
+
+const refreshSeasonLadderWithCachedFallback = async (env: Env) => {
+  try {
+    return await refreshSeasonLadder(env);
+  } catch (err) {
+    const cachedPayload = await getSeasonLadderRows(env);
+    if (cachedPayload.rows.length) {
+      const message = err instanceof Error ? err.message : 'Dribl ladder request failed';
+      return {
+        ...cachedPayload,
+        refreshed: false,
+        warning: `${message}. Showing the last saved ladder instead.`,
+      };
+    }
+    throw err;
+  }
 };
 
 async function handleApi(request: Request, env: Env) {
@@ -1604,7 +1644,7 @@ async function handleApi(request: Request, env: Env) {
     if (pathname === '/api/admin/refresh-season-ladder' && method === 'POST') {
       const adminPasscodeError = requireAdminPasscode(request, env);
       if (adminPasscodeError) return adminPasscodeError;
-      return jsonResponse(await refreshSeasonLadder(env), 200, { 'Cache-Control': 'no-store' });
+      return jsonResponse(await refreshSeasonLadderWithCachedFallback(env), 200, { 'Cache-Control': 'no-store' });
     }
 
     if (pathname === '/api/events' && method === 'GET') {
@@ -2580,7 +2620,7 @@ export default {
     // which is Monday 22:00 in Sydney during AEST and Monday 23:00 during AEDT.
     ctx.waitUntil((async () => {
       await ensureSchema(env);
-      await refreshSeasonLadder(env);
+      await refreshSeasonLadderWithCachedFallback(env);
     })());
   },
 

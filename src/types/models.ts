@@ -116,6 +116,8 @@ export interface SeasonLadderRow {
 export interface SeasonLadderResponse {
   updatedAt: string | null;
   rows: SeasonLadderRow[];
+  refreshed?: boolean;
+  warning?: string;
 }
 
 export interface DataStore {
