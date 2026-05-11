@@ -282,11 +282,6 @@ export function NextGamePage() {
           </aside>
         </div>
       </DndContext>
-      <img
-        className="next-game-banner"
-        src={encodeURI('/ChatGPT Image Apr 17, 2026, 07_43_26 PM.png')}
-        alt="Grimace FC banner"
-      />
     </section>
   );
 }

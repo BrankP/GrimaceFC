@@ -100,6 +100,26 @@ const insertSystemMessage = async (env: Env, text: string, fallbackUserId?: stri
   }
 };
 
+const getRefGameLabel = async (env: Env, eventId: string) => {
+  const event = await env.DB.prepare('SELECT opponent, date FROM events WHERE id = ?1 LIMIT 1')
+    .bind(eventId)
+    .first<{ opponent: string | null; date: string | null }>();
+  if (event?.opponent) return `the ${event.opponent} game`;
+  if (event?.date) return `the away game on ${event.date.slice(0, 10)}`;
+  return 'the away game';
+};
+
+const announceNextRefDecision = async (
+  env: Env,
+  payload: { decisionText: string; eventId: string; nextRefName?: string | null; fallbackUserId?: string },
+) => {
+  const gameLabel = await getRefGameLabel(env, payload.eventId);
+  const nextDecisionText = payload.nextRefName
+    ? ` @${payload.nextRefName}, it's your turn to decide for ${gameLabel}.`
+    : '';
+  await insertSystemMessage(env, `${payload.decisionText} for ${gameLabel}.${nextDecisionText}`, payload.fallbackUserId);
+};
+
 
 const maybePostAttendanceReminders = async (env: Env) => {
   const reminderDate = new Date().toISOString().slice(0, 10);
@@ -1463,6 +1483,16 @@ async function handleApi(request: Request, env: Env) {
           .run();
       }
 
+      const passingUser = await env.DB.prepare('SELECT name FROM users WHERE id = ?1 LIMIT 1')
+        .bind(body.userId)
+        .first<{ name: string }>();
+      await announceNextRefDecision(env, {
+        decisionText: `@${passingUser?.name ?? 'The current referee'} has passed ref duty`,
+        eventId: body.eventId,
+        nextRefName: nextEligible.name,
+        fallbackUserId: body.userId,
+      });
+
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }
 
@@ -1487,11 +1517,11 @@ async function handleApi(request: Request, env: Env) {
       const passers = await env.DB.prepare('SELECT users.name AS name FROM next_ref_passes JOIN users ON users.id = next_ref_passes.user_id WHERE next_ref_passes.event_id = ?1 ORDER BY next_ref_passes.passed_at ASC')
         .bind(body.eventId)
         .all<{ name: string }>();
-      const eventMeta = await env.DB.prepare('SELECT opponent FROM events WHERE id = ?1 LIMIT 1').bind(body.eventId).first<{ opponent: string | null }>();
+      const gameLabel = await getRefGameLabel(env, body.eventId);
       const passerNames = passers.results.map((row) => `@${row.name}`);
       const messageText = passerNames.length
-        ? `${acceptedUser?.name ?? 'Referee'} has accepted ref duty. The following peeps owe them $50: ${passerNames.join(', ')}.`
-        : `${acceptedUser?.name ?? 'Referee'} has accepted ref duty for the ${eventMeta?.opponent ?? 'upcoming'} game.`;
+        ? `Decision made: @${acceptedUser?.name ?? 'Referee'} has accepted ref duty for ${gameLabel}. The following peeps owe them $50: ${passerNames.join(', ')}.`
+        : `Decision made: @${acceptedUser?.name ?? 'Referee'} has accepted ref duty for ${gameLabel}.`;
 
       await insertSystemMessage(env, messageText, body.userId);
 
@@ -1539,6 +1569,16 @@ async function handleApi(request: Request, env: Env) {
           .run();
       }
 
+      const skippedUser = await env.DB.prepare('SELECT name FROM users WHERE id = ?1 LIMIT 1')
+        .bind(currentSlot.user_id)
+        .first<{ name: string }>();
+      await announceNextRefDecision(env, {
+        decisionText: `@${skippedUser?.name ?? 'The current referee'} was skipped for ref duty`,
+        eventId: body.eventId,
+        nextRefName: nextEligible.name,
+        fallbackUserId: currentSlot.user_id,
+      });
+
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
     }
 
@@ -1568,6 +1608,8 @@ async function handleApi(request: Request, env: Env) {
           "SELECT id FROM events WHERE event_type = 'Game' AND home_away = 'Away' AND ref_duty_user_id IS NULL AND datetime(date) > datetime(?1) ORDER BY date ASC LIMIT 1",
         ).bind(completedEvent.date).first<{ id: string }>()
         : null;
+      let nextDecisionRefName: string | null = null;
+      let nextDecisionEventId: string | null = null;
       if (nextAway?.id) {
         const nextEligible = await getNextEligibleRosterUser(env, nextAway.id, normalizedSlotId);
         if (nextEligible?.id) {
@@ -1585,7 +1627,19 @@ async function handleApi(request: Request, env: Env) {
               .bind(nextAway.id, nextEligible.id, 'Pending Decision', 0, null, createdAt, createdAt)
               .run();
           }
+          nextDecisionRefName = nextEligible.name;
+          nextDecisionEventId = nextAway.id;
         }
+      }
+
+      if (nextDecisionEventId && nextDecisionRefName) {
+        const completedLabel = await getRefGameLabel(env, body.eventId);
+        const nextLabel = await getRefGameLabel(env, nextDecisionEventId);
+        await insertSystemMessage(
+          env,
+          `Ref duty is complete for ${completedLabel}. @${nextDecisionRefName}, it's your turn to decide for ${nextLabel}.`,
+          currentRefSlot.user_id,
+        );
       }
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
