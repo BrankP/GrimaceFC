@@ -124,12 +124,43 @@ const formatLastUpdated = (value: string | null) => {
   return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-const resultBadgeClass = (result: string) => {
-  const normalized = result.toUpperCase();
-  if (normalized === 'W') return 'is-win';
-  if (normalized === 'L') return 'is-loss';
-  if (normalized === 'D') return 'is-draw';
+const normalizeResultToken = (result: string | null | undefined): LastFiveResult => {
+  const normalized = String(result ?? '').trim().toUpperCase();
+  if (normalized === 'W') return 'W';
+  if (normalized === 'L') return 'L';
+  if (normalized === 'D') return 'D';
+  return null;
+};
+
+const resultToneClass = (result: LastFiveResult) => {
+  if (result === 'W') return 'is-win';
+  if (result === 'L') return 'is-loss';
+  if (result === 'D') return 'is-draw';
   return 'is-empty';
+};
+
+const resultSymbol = (result: LastFiveResult) => {
+  if (result === 'W') return '✓';
+  if (result === 'L') return '✕';
+  return '–';
+};
+
+const generatedRecentFormFromRecord = (row: SeasonLadderRow): LastFiveResult[] => {
+  const wins = Math.max(0, toStatValue(row.won));
+  const draws = Math.max(0, toStatValue(row.drawn));
+  const losses = Math.max(0, toStatValue(row.lost));
+  const played = Math.max(0, toStatValue(row.played));
+  const generated: LastFiveResult[] = [
+    ...Array.from({ length: wins }, () => 'W' as const),
+    ...Array.from({ length: draws }, () => 'D' as const),
+    ...Array.from({ length: losses }, () => 'L' as const),
+  ];
+  return generated.slice(-Math.min(5, played));
+};
+
+const recentFormForLadderRow = (row: SeasonLadderRow): LastFiveResult[] => {
+  const supplied = row.recentForm.map(normalizeResultToken).filter((result): result is Exclude<LastFiveResult, null> => result !== null).slice(-5);
+  return supplied.length ? supplied : generatedRecentFormFromRecord(row);
 };
 
 function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
@@ -140,6 +171,7 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [messageKind, setMessageKind] = useState<'success' | 'warning'>('success');
 
   const loadLadder = async () => {
     setIsLoading(true);
@@ -163,11 +195,13 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
     setIsRefreshing(true);
     setError('');
     setMessage('');
+    setMessageKind('success');
     try {
       const payload = await refreshSeasonLadder();
       setRows(payload.rows);
       setUpdatedAt(payload.updatedAt);
-      setMessage('Ladder refreshed successfully.');
+      setMessage(payload.warning ?? 'Ladder refreshed successfully.');
+      setMessageKind(payload.warning ? 'warning' : 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh the ladder.');
     } finally {
@@ -187,16 +221,15 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
 
       {isOpen && (
         <div className="live-ladder-content">
-          <div className="live-ladder-toolbar">
-            <p className="muted">Current Dribl ladder. Logos load from the source URLs.</p>
-            {isAdmin && (
+          {isAdmin && (
+            <div className="live-ladder-toolbar">
               <button type="button" className="secondary" onClick={() => void handleRefresh()} disabled={isRefreshing}>
                 {isRefreshing ? 'Refreshing…' : 'Refresh ladder now'}
               </button>
-            )}
-          </div>
+            </div>
+          )}
 
-          {message && <p className="success-text">{message}</p>}
+          {message && <p className={messageKind === 'warning' ? 'warning-text' : 'success-text'}>{message}</p>}
           {error && <p className="error">Unable to load ladder: {error}</p>}
           {isLoading && <p className="muted">Loading live ladder…</p>}
           {!isLoading && !error && !rows.length && <p className="muted">No ladder rows yet. An admin can refresh the ladder now.</p>}
@@ -225,35 +258,43 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => (
-                    <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
-                      <td className="ladder-position">{row.position ?? '–'}</td>
-                      <td className="ladder-team-cell">
-                        <LadderLogo src={row.clubLogo} alt={`${row.teamName} logo`} />
-                        <span>{row.teamName}</span>
-                      </td>
-                      <td>{row.played}</td>
-                      <td>{row.won}</td>
-                      <td>{row.drawn}</td>
-                      <td>{row.lost}</td>
-                      <td>{row.byes}</td>
-                      <td>{row.forfeits}</td>
-                      <td>{row.goalsFor}</td>
-                      <td>{row.goalsAgainst}</td>
-                      <td>{row.goalDifference}</td>
-                      <td>{row.pointAdjustment}</td>
-                      <td>{row.pointsPerGame.toFixed(2)}</td>
-                      <td className="ladder-points">{row.points}</td>
-                      <td>
-                        <span className="ladder-form-row">
-                          {row.recentForm.length ? row.recentForm.map((result, index) => (
-                            <span key={`${row.id}-form-${index}`} className={`ladder-form-badge ${resultBadgeClass(result)}`}>{result}</span>
-                          )) : <span className="muted">–</span>}
-                        </span>
-                      </td>
-                      <td><LadderLogo src={row.upNextLogo} alt="Up next opponent logo" /></td>
-                    </tr>
-                  ))}
+                  {rows.map((row) => {
+                    const recentForm = recentFormForLadderRow(row);
+                    return (
+                      <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
+                        <td className="ladder-position">{row.position ?? '–'}</td>
+                        <td className="ladder-team-cell">
+                          <LadderLogo src={row.clubLogo} alt={`${row.teamName} logo`} />
+                          <span>{row.teamName}</span>
+                        </td>
+                        <td>{row.played}</td>
+                        <td>{row.won}</td>
+                        <td>{row.drawn}</td>
+                        <td>{row.lost}</td>
+                        <td>{row.byes}</td>
+                        <td>{row.forfeits}</td>
+                        <td>{row.goalsFor}</td>
+                        <td>{row.goalsAgainst}</td>
+                        <td>{row.goalDifference}</td>
+                        <td>{row.pointAdjustment}</td>
+                        <td>{row.pointsPerGame.toFixed(2)}</td>
+                        <td className="ladder-points">{row.points}</td>
+                        <td>
+                          <span className="team-last-five-row ladder-last-five-row" aria-label="Recent form with most recent on the right">
+                            {recentForm.length ? recentForm.map((result, index) => {
+                              const isMostRecent = index === recentForm.length - 1;
+                              return (
+                                <span key={`${row.id}-form-${index}`} className={`team-last-five-dot ${resultToneClass(result)} ${isMostRecent ? 'is-most-recent' : ''}`} aria-label={result ?? 'No result'}>
+                                  {resultSymbol(result)}
+                                </span>
+                              );
+                            }) : <span className="team-last-five-dot is-empty" aria-label="No result">–</span>}
+                          </span>
+                        </td>
+                        <td><LadderLogo src={row.upNextLogo} alt="Up next opponent logo" /></td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -382,7 +423,7 @@ export function TeamStatsPage() {
       <article className="card team-season-record-card">
         <div className="team-season-grid" role="table" aria-label="Season record summary">
           {[
-            'MP', 'W', 'D', 'L', 'GF', 'GA', 'GD', 'Pts', 'Last 5',
+            'MP', 'W', 'D', 'L', 'Pts', 'Last 5',
           ].map((label) => (
             <p key={`season-label-${label}`} className={`team-season-col-label ${label === 'Pts' ? 'is-points' : ''}`} role="columnheader">{label}</p>
           ))}
@@ -391,15 +432,12 @@ export function TeamStatsPage() {
           <p className="team-season-col-value" role="cell">{seasonRecord.w}</p>
           <p className="team-season-col-value" role="cell">{seasonRecord.d}</p>
           <p className="team-season-col-value" role="cell">{seasonRecord.l}</p>
-          <p className="team-season-col-value" role="cell">{seasonRecord.gf}</p>
-          <p className="team-season-col-value" role="cell">{seasonRecord.ga}</p>
-          <p className="team-season-col-value" role="cell">{seasonRecord.gd}</p>
           <p className="team-season-col-value is-points" role="cell">{seasonRecord.pts}</p>
           <div className="team-last-five-row" role="cell" aria-label="Last five results with most recent on the right">
             {seasonRecord.lastFive.map((result, index) => {
               const isMostRecent = index === seasonRecord.lastFive.length - 1;
-              const tone = result === 'W' ? 'is-win' : result === 'L' ? 'is-loss' : result === 'D' ? 'is-draw' : 'is-empty';
-              const symbol = result === 'W' ? '✓' : result === 'L' ? '✕' : '–';
+              const tone = resultToneClass(result);
+              const symbol = resultSymbol(result);
               return (
                 <span key={`last-five-${index}`} className={`team-last-five-dot ${tone} ${isMostRecent ? 'is-most-recent' : ''}`} aria-label={result ?? 'No result'}>
                   {symbol}
