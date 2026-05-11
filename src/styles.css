@@ -374,7 +374,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 }
 .team-season-grid {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr)) minmax(105px, 1.45fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(105px, 1.45fr);
   align-items: center;
   column-gap: .35rem;
   row-gap: .55rem;
@@ -479,6 +479,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .live-ladder-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .live-ladder-toolbar button { min-height: 38px; padding: .55rem .75rem; }
 .success-text { color: #157347; font-weight: 700; }
+.warning-text { color: #b54708; font-weight: 700; }
 .live-ladder-scroll {
   overflow-x: auto;
   border: 1px solid #e5e7eb;
@@ -539,22 +540,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
   border: 1px solid #d0d5dd;
   font-weight: 800;
 }
-.ladder-form-row { display: inline-flex; align-items: center; gap: .22rem; }
-.ladder-form-badge {
-  width: 22px;
-  height: 22px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #fff;
-  font-size: .72rem;
-  font-weight: 800;
-}
-.ladder-form-badge.is-win { background: #2eaf5d; }
-.ladder-form-badge.is-draw { background: #8a8f98; }
-.ladder-form-badge.is-loss { background: #d84b3f; }
-.ladder-form-badge.is-empty { background: #a5acb8; }
+.ladder-last-five-row { justify-content: center; }
 @media (max-width: 620px) {
   .live-ladder-toolbar { align-items: stretch; }
   .live-ladder-toolbar button { width: 100%; }
