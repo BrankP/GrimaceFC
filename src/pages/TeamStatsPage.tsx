@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAppState } from '../App';
+import { getSeasonLadder, refreshSeasonLadder } from '../services/dataService';
+import type { SeasonLadderRow } from '../types/models';
 
 const SYSTEM_USER_ID = 'grimace-bot';
 const TEAM_STATS_START_DATE_ISO = '2026-04-01T00:00:00Z';
@@ -108,8 +110,162 @@ function RankedList({
   );
 }
 
+
+function LadderLogo({ src, alt }: { src: string | null; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span className="ladder-logo-placeholder" aria-hidden="true">–</span>;
+  return <img className="ladder-logo" src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
+}
+
+const formatLastUpdated = (value: string | null) => {
+  if (!value) return 'Not synced yet';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+};
+
+const resultBadgeClass = (result: string) => {
+  const normalized = result.toUpperCase();
+  if (normalized === 'W') return 'is-win';
+  if (normalized === 'L') return 'is-loss';
+  if (normalized === 'D') return 'is-draw';
+  return 'is-empty';
+};
+
+function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [rows, setRows] = useState<SeasonLadderRow[]>([]);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+
+  const loadLadder = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const payload = await getSeasonLadder();
+      setRows(payload.rows);
+      setUpdatedAt(payload.updatedAt);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load the live ladder.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadLadder();
+  }, []);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    setError('');
+    setMessage('');
+    try {
+      const payload = await refreshSeasonLadder();
+      setRows(payload.rows);
+      setUpdatedAt(payload.updatedAt);
+      setMessage('Ladder refreshed successfully.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to refresh the ladder.');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  return (
+    <article className="card live-ladder-card">
+      <button type="button" className="live-ladder-toggle" aria-expanded={isOpen} onClick={() => setIsOpen((current) => !current)}>
+        <span>
+          <strong>Live Ladder</strong>
+          <small>Last updated: {formatLastUpdated(updatedAt)}</small>
+        </span>
+        <span className="live-ladder-chevron" aria-hidden="true">{isOpen ? '▴' : '▾'}</span>
+      </button>
+
+      {isOpen && (
+        <div className="live-ladder-content">
+          <div className="live-ladder-toolbar">
+            <p className="muted">Current Dribl ladder. Logos load from the source URLs.</p>
+            {isAdmin && (
+              <button type="button" className="secondary" onClick={() => void handleRefresh()} disabled={isRefreshing}>
+                {isRefreshing ? 'Refreshing…' : 'Refresh ladder now'}
+              </button>
+            )}
+          </div>
+
+          {message && <p className="success-text">{message}</p>}
+          {error && <p className="error">Unable to load ladder: {error}</p>}
+          {isLoading && <p className="muted">Loading live ladder…</p>}
+          {!isLoading && !error && !rows.length && <p className="muted">No ladder rows yet. An admin can refresh the ladder now.</p>}
+
+          {!!rows.length && (
+            <div className="live-ladder-scroll" role="region" aria-label="Live Ladder table" tabIndex={0}>
+              <table className="live-ladder-table">
+                <thead>
+                  <tr>
+                    <th>Position</th>
+                    <th>Team</th>
+                    <th>Played</th>
+                    <th>Won</th>
+                    <th>Drawn</th>
+                    <th>Lost</th>
+                    <th>Byes</th>
+                    <th>Forfeits</th>
+                    <th>GF</th>
+                    <th>GA</th>
+                    <th>GD</th>
+                    <th>Adj.</th>
+                    <th>Avg.</th>
+                    <th>Pts</th>
+                    <th>Recent Form</th>
+                    <th>Up Next</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
+                      <td className="ladder-position">{row.position ?? '–'}</td>
+                      <td className="ladder-team-cell">
+                        <LadderLogo src={row.clubLogo} alt={`${row.teamName} logo`} />
+                        <span>{row.teamName}</span>
+                      </td>
+                      <td>{row.played}</td>
+                      <td>{row.won}</td>
+                      <td>{row.drawn}</td>
+                      <td>{row.lost}</td>
+                      <td>{row.byes}</td>
+                      <td>{row.forfeits}</td>
+                      <td>{row.goalsFor}</td>
+                      <td>{row.goalsAgainst}</td>
+                      <td>{row.goalDifference}</td>
+                      <td>{row.pointAdjustment}</td>
+                      <td>{row.pointsPerGame.toFixed(2)}</td>
+                      <td className="ladder-points">{row.points}</td>
+                      <td>
+                        <span className="ladder-form-row">
+                          {row.recentForm.length ? row.recentForm.map((result, index) => (
+                            <span key={`${row.id}-form-${index}`} className={`ladder-form-badge ${resultBadgeClass(result)}`}>{result}</span>
+                          )) : <span className="muted">–</span>}
+                        </span>
+                      </td>
+                      <td><LadderLogo src={row.upNextLogo} alt="Up next opponent logo" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </article>
+  );
+}
+
 export function TeamStatsPage() {
-  const { data, currentUser } = useAppState();
+  const { data, currentUser, canEditScores } = useAppState();
 
   const players = useMemo<RankedPlayer[]>(() => {
     const playerStats = new Map<string, { goals: number; assists: number }>();
@@ -271,6 +427,8 @@ export function TeamStatsPage() {
           <p className="team-summary-label">My Contributions</p>
         </article>
       </div>
+
+      <LiveLadderSection isAdmin={canEditScores} />
 
       {!hasAnyStats && <p className="card muted">No stats recorded yet.</p>}
 

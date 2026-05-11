@@ -4,6 +4,9 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-04-16",
   "observability": { "enabled": true },
+  // Cloudflare cron expressions are evaluated in UTC.
+  // 0 12 * * 1 = Monday 12:00 UTC (Monday 22:00 AEST / 23:00 AEDT in Sydney).
+  "triggers": { "crons": ["0 12 * * 1"] },
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"

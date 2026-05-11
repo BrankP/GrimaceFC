@@ -450,3 +450,114 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 @media (max-width: 520px) {
   .action-emoji-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
+
+.live-ladder-card {
+  background: #f9fafc;
+  color: #1c2430;
+  border: 1px solid #d9e0ea;
+  padding: 0;
+  overflow: hidden;
+}
+.live-ladder-card .muted { color: #667085; }
+.live-ladder-toggle {
+  width: 100%;
+  min-height: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #1c2430;
+  padding: .85rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+}
+.live-ladder-toggle span:first-child { display: grid; gap: .15rem; }
+.live-ladder-toggle strong { font-size: 1.05rem; }
+.live-ladder-toggle small { color: #667085; font-size: .82rem; }
+.live-ladder-chevron { font-size: 1.1rem; color: #475467; }
+.live-ladder-content { display: grid; gap: .7rem; padding: 0 .85rem .85rem; }
+.live-ladder-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.live-ladder-toolbar button { min-height: 38px; padding: .55rem .75rem; }
+.success-text { color: #157347; font-weight: 700; }
+.live-ladder-scroll {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+.live-ladder-table {
+  width: 100%;
+  min-width: 1180px;
+  border-collapse: collapse;
+  color: #182230;
+  font-size: .84rem;
+}
+.live-ladder-table th,
+.live-ladder-table td {
+  padding: .48rem .55rem;
+  border-bottom: 1px solid #edf0f4;
+  text-align: center;
+  white-space: nowrap;
+}
+.live-ladder-table th {
+  background: #f3f5f8;
+  color: #344054;
+  font-weight: 800;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+.live-ladder-table tbody tr:last-child td { border-bottom: 0; }
+.live-ladder-table tbody tr.is-our-team {
+  background: #f0f7ff;
+  box-shadow: inset 4px 0 0 #7c3aed;
+}
+.ladder-position,
+.ladder-points { font-weight: 800; }
+.ladder-team-cell {
+  min-width: 320px;
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  text-align: left;
+  white-space: normal;
+  font-weight: 700;
+}
+.ladder-logo,
+.ladder-logo-placeholder {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.ladder-logo-placeholder {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #667085;
+  border: 1px solid #d0d5dd;
+  font-weight: 800;
+}
+.ladder-form-row { display: inline-flex; align-items: center; gap: .22rem; }
+.ladder-form-badge {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 800;
+}
+.ladder-form-badge.is-win { background: #2eaf5d; }
+.ladder-form-badge.is-draw { background: #8a8f98; }
+.ladder-form-badge.is-loss { background: #d84b3f; }
+.ladder-form-badge.is-empty { background: #a5acb8; }
+@media (max-width: 620px) {
+  .live-ladder-toolbar { align-items: stretch; }
+  .live-ladder-toolbar button { width: 100%; }
+  .live-ladder-table { font-size: .78rem; }
+  .ladder-team-cell { min-width: 260px; }
+}

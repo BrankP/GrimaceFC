@@ -32,6 +32,8 @@ const RATE_WINDOW_MS = 60_000;
 const READ_LIMIT = 60;
 const WRITE_LIMIT = 20;
 const SYSTEM_USER_ID = 'grimace-bot';
+const DRIBL_LADDER_URL = 'https://mc-api.dribl.com/api/ladders?date_range=default&season=bam17yAKwX&competition=2PmjO2ojNZ&league=nmYJEzqaNz&ladder_type=regular&tenant=kbam1QjmwX&require_pools=true';
+const OUR_LADDER_TEAM_NAME = 'Allambie Beacon Hill United FC AL 06 Mixed B';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -156,6 +158,15 @@ const cacheHeadersFor = (pathname: string) => {
 };
 
 const nowIso = () => new Date().toISOString();
+const normalizeNullableString = (value: unknown) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  return text.length ? text : null;
+};
+const normalizeNumber = (value: unknown, fallback = 0) => {
+  const normalized = Number(value ?? fallback);
+  return Number.isFinite(normalized) ? normalized : fallback;
+};
 const createId = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
 const normalizeMentionName = (name: string) => name.trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -683,6 +694,33 @@ const schemaStatements = [
     FOREIGN KEY(event_id) REFERENCES events(id),
     FOREIGN KEY(referee_user_id) REFERENCES users(id)
   )`,
+  `CREATE TABLE IF NOT EXISTS season_ladder_current (
+    id TEXT PRIMARY KEY,
+    position INTEGER,
+    team_hash_id TEXT,
+    team_name TEXT NOT NULL,
+    club_name TEXT,
+    club_code TEXT,
+    club_logo TEXT,
+    played INTEGER DEFAULT 0,
+    won INTEGER DEFAULT 0,
+    drawn INTEGER DEFAULT 0,
+    lost INTEGER DEFAULT 0,
+    byes INTEGER DEFAULT 0,
+    forfeits INTEGER DEFAULT 0,
+    goals_for INTEGER DEFAULT 0,
+    goals_against INTEGER DEFAULT 0,
+    goal_difference INTEGER DEFAULT 0,
+    point_adjustment INTEGER DEFAULT 0,
+    points_per_game REAL DEFAULT 0,
+    points INTEGER DEFAULT 0,
+    recent_form_json TEXT,
+    upcoming_matches_json TEXT,
+    up_next_logo TEXT,
+    is_our_team INTEGER DEFAULT 0,
+    raw_json TEXT,
+    updated_at TEXT NOT NULL
+  )`,
   'CREATE INDEX IF NOT EXISTS idx_events_date ON events(date)',
   'CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_message_reactions_message ON message_reactions(message_id, emoji)',
@@ -696,6 +734,8 @@ const schemaStatements = [
   'CREATE INDEX IF NOT EXISTS idx_next_ref_passes_event ON next_ref_passes(event_id, passed_at)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_skips_event_slot ON next_ref_skips(event_id, ref_slot_id)',
   'CREATE INDEX IF NOT EXISTS idx_next_ref_history_completed ON next_ref_history(completed_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_season_ladder_current_position ON season_ladder_current(position)',
+  'CREATE INDEX IF NOT EXISTS idx_season_ladder_current_updated_at ON season_ladder_current(updated_at)',
 ] as const;
 
 let schemaInitPromise: Promise<void> | null = null;
@@ -1253,6 +1293,274 @@ const buildNextRefPayload = async (env: Env) => {
   };
 };
 
+
+type SeasonLadderDbRow = {
+  id: string;
+  position: number | null;
+  team_hash_id: string | null;
+  team_name: string;
+  club_name: string | null;
+  club_code: string | null;
+  club_logo: string | null;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  byes: number;
+  forfeits: number;
+  goals_for: number;
+  goals_against: number;
+  goal_difference: number;
+  point_adjustment: number;
+  points_per_game: number;
+  points: number;
+  recent_form_json: string | null;
+  upcoming_matches_json: string | null;
+  up_next_logo: string | null;
+  is_our_team: number;
+  raw_json: string | null;
+  updated_at: string;
+};
+
+type ParsedSeasonLadderRow = {
+  id: string;
+  position: number | null;
+  teamHashId: string | null;
+  teamName: string;
+  clubName: string | null;
+  clubCode: string | null;
+  clubLogo: string | null;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  byes: number;
+  forfeits: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  pointAdjustment: number;
+  pointsPerGame: number;
+  points: number;
+  recentForm: string[];
+  upcomingMatches: unknown[];
+  upNextLogo: string | null;
+  upNextTeamName: string | null;
+  isOurTeam: boolean;
+  raw: unknown;
+  updatedAt: string;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const extractLadderCandidates = (value: unknown, candidates: Record<string, unknown>[] = []) => {
+  if (Array.isArray(value)) {
+    for (const item of value) extractLadderCandidates(item, candidates);
+    return candidates;
+  }
+  if (!isRecord(value)) return candidates;
+
+  const hasTeamName = typeof value.team_name === 'string' || typeof value.teamName === 'string';
+  const hasLadderMetric = ['played', 'won', 'drawn', 'lost', 'points', 'goals_for', 'goals_against'].some((key) => key in value);
+  if (hasTeamName && hasLadderMetric) candidates.push(value);
+
+  for (const nested of Object.values(value)) {
+    if (typeof nested === 'object' && nested !== null) extractLadderCandidates(nested, candidates);
+  }
+  return candidates;
+};
+
+const normalizeRecentForm = (row: Record<string, unknown>) => {
+  const direct = row.recent_form ?? row.recentForm ?? row.form ?? row.last_five ?? row.lastFive;
+  const normalizeToken = (value: unknown): string | null => {
+    const token = String(value ?? '').trim().toUpperCase();
+    if (token.startsWith('W') || token === 'WIN') return 'W';
+    if (token.startsWith('D') || token === 'DRAW') return 'D';
+    if (token.startsWith('L') || token === 'LOSS') return 'L';
+    return null;
+  };
+
+  if (Array.isArray(direct)) {
+    return direct.map((item) => isRecord(item) ? normalizeToken(item.result ?? item.outcome ?? item.type ?? item.value) : normalizeToken(item)).filter((item): item is string => item !== null).slice(-5);
+  }
+
+  if (typeof direct === 'string') {
+    return direct.split(/[\s,|/-]+/).map(normalizeToken).filter((item): item is string => item !== null).slice(-5);
+  }
+
+  const matches = row.recent_matches ?? row.recentMatches ?? row.matches;
+  if (Array.isArray(matches)) {
+    return matches.map((match) => isRecord(match) ? normalizeToken(match.result ?? match.outcome ?? match.ladder_result) : null).filter((item): item is string => item !== null).slice(-5);
+  }
+
+  return [];
+};
+
+const getUpcomingMatches = (row: Record<string, unknown>) => {
+  const upcoming = row.upcoming_matches ?? row.upcomingMatches ?? row.upcoming;
+  return Array.isArray(upcoming) ? upcoming : [];
+};
+
+const getUpNextDetails = (teamName: string, upcomingMatches: unknown[]) => {
+  const first = upcomingMatches.find(isRecord);
+  if (!first) return { logo: null, teamName: null };
+  const homeTeam = isRecord(first.home_team) ? first.home_team : {};
+  const awayTeam = isRecord(first.away_team) ? first.away_team : {};
+  const homeClub = isRecord(first.home_club) ? first.home_club : {};
+  const awayClub = isRecord(first.away_club) ? first.away_club : {};
+  const homeTeamName = normalizeNullableString(first.home_team_name ?? first.homeTeamName ?? homeTeam.name);
+  const awayTeamName = normalizeNullableString(first.away_team_name ?? first.awayTeamName ?? awayTeam.name);
+  const homeLogo = normalizeNullableString(first.home_club_image ?? first.homeClubImage ?? first.home_club_image_url ?? homeClub.image);
+  const awayLogo = normalizeNullableString(first.away_club_image ?? first.awayClubImage ?? first.away_club_image_url ?? awayClub.image);
+  if (homeTeamName && homeTeamName === teamName) return { logo: awayLogo, teamName: awayTeamName };
+  return { logo: homeLogo, teamName: homeTeamName };
+};
+
+const parseSeasonLadderPayload = (payload: unknown, updatedAt = nowIso()): ParsedSeasonLadderRow[] => {
+  const seen = new Set<string>();
+  const parsedRows = extractLadderCandidates(payload)
+    .map<ParsedSeasonLadderRow | null>((row, index) => {
+      const teamName = normalizeNullableString(row.team_name ?? row.teamName);
+      if (!teamName) return null;
+      const teamHashId = normalizeNullableString(row.team_hash_id ?? row.teamHashId ?? row.team_id ?? row.teamId);
+      const id = teamHashId ?? normalizeNullableString(row.id) ?? `ladder-${index + 1}-${teamName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+      if (seen.has(id)) return null;
+      seen.add(id);
+      const upcomingMatches = getUpcomingMatches(row);
+      const upNext = getUpNextDetails(teamName, upcomingMatches);
+      const goalsFor = normalizeNumber(row.goals_for ?? row.goalsFor ?? row.for);
+      const goalsAgainst = normalizeNumber(row.goals_against ?? row.goalsAgainst ?? row.against);
+      const goalDifference = normalizeNumber(row.goal_difference ?? row.goalDifference ?? row.gd, goalsFor - goalsAgainst);
+      const pointAdjustment = normalizeNumber(row.point_adjustment ?? row.adj ?? row.adjustment);
+      const recentForm = normalizeRecentForm(row);
+
+      return {
+        id,
+        position: normalizeNumber(row.position ?? row.pos ?? row.rank, index + 1),
+        teamHashId,
+        teamName,
+        clubName: normalizeNullableString(row.club_name ?? row.clubName),
+        clubCode: normalizeNullableString(row.club_code ?? row.clubCode),
+        clubLogo: normalizeNullableString(row.club_logo ?? row.clubLogo),
+        played: normalizeNumber(row.played),
+        won: normalizeNumber(row.won),
+        drawn: normalizeNumber(row.drawn),
+        lost: normalizeNumber(row.lost),
+        byes: normalizeNumber(row.byes),
+        forfeits: normalizeNumber(row.forfeits),
+        goalsFor,
+        goalsAgainst,
+        goalDifference,
+        pointAdjustment,
+        pointsPerGame: normalizeNumber(row.points_per_game ?? row.pointsPerGame ?? row.average ?? row.avg),
+        points: normalizeNumber(row.points),
+        recentForm,
+        upcomingMatches,
+        upNextLogo: upNext.logo,
+        upNextTeamName: upNext.teamName,
+        isOurTeam: teamName === OUR_LADDER_TEAM_NAME,
+        raw: row,
+        updatedAt,
+      };
+    })
+    .filter((row): row is ParsedSeasonLadderRow => row !== null);
+
+  return parsedRows.sort((a, b) => normalizeNumber(a.position, 999) - normalizeNumber(b.position, 999) || b.points - a.points || a.teamName.localeCompare(b.teamName));
+};
+
+const seasonLadderPayloadFromRows = (rows: SeasonLadderDbRow[]) => {
+  const updatedAt = rows[0]?.updated_at ?? null;
+  return {
+    updatedAt,
+    rows: rows.map((row) => ({
+      id: row.id,
+      position: row.position,
+      teamHashId: row.team_hash_id,
+      teamName: row.team_name,
+      clubName: row.club_name,
+      clubCode: row.club_code,
+      clubLogo: row.club_logo,
+      played: row.played,
+      won: row.won,
+      drawn: row.drawn,
+      lost: row.lost,
+      byes: row.byes,
+      forfeits: row.forfeits,
+      goalsFor: row.goals_for,
+      goalsAgainst: row.goals_against,
+      goalDifference: row.goal_difference,
+      pointAdjustment: row.point_adjustment,
+      pointsPerGame: row.points_per_game,
+      points: row.points,
+      recentForm: row.recent_form_json ? JSON.parse(row.recent_form_json) as string[] : [],
+      upcomingMatches: row.upcoming_matches_json ? JSON.parse(row.upcoming_matches_json) as unknown[] : [],
+      upNextLogo: row.up_next_logo,
+      isOurTeam: row.is_our_team === 1,
+      updatedAt: row.updated_at,
+    })),
+  };
+};
+
+const getSeasonLadderRows = async (env: Env) => {
+  const rows = await env.DB.prepare('SELECT * FROM season_ladder_current ORDER BY position ASC, points DESC, team_name ASC').all<SeasonLadderDbRow>();
+  return seasonLadderPayloadFromRows(rows.results);
+};
+
+const refreshSeasonLadder = async (env: Env) => {
+  const response = await fetch(DRIBL_LADDER_URL, {
+    headers: {
+      accept: 'application/json',
+      'x-requested-with': 'XMLHttpRequest',
+      Referer: 'https://mwfa.dribl.com/',
+    },
+    method: 'GET',
+  });
+  if (!response.ok) throw new Error(`Dribl ladder request failed: ${response.status}`);
+  const payload = await response.json();
+  const updatedAt = nowIso();
+  const rows = parseSeasonLadderPayload(payload, updatedAt);
+  if (!rows.length) throw new Error('Dribl ladder response did not contain ladder rows');
+
+  await env.DB.prepare('DELETE FROM season_ladder_current').run();
+  for (const row of rows) {
+    await env.DB.prepare(
+      `INSERT INTO season_ladder_current (
+        id, position, team_hash_id, team_name, club_name, club_code, club_logo, played, won, drawn, lost, byes, forfeits,
+        goals_for, goals_against, goal_difference, point_adjustment, points_per_game, points, recent_form_json,
+        upcoming_matches_json, up_next_logo, is_our_team, raw_json, updated_at
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)`,
+    ).bind(
+      row.id,
+      row.position,
+      row.teamHashId,
+      row.teamName,
+      row.clubName,
+      row.clubCode,
+      row.clubLogo,
+      row.played,
+      row.won,
+      row.drawn,
+      row.lost,
+      row.byes,
+      row.forfeits,
+      row.goalsFor,
+      row.goalsAgainst,
+      row.goalDifference,
+      row.pointAdjustment,
+      row.pointsPerGame,
+      row.points,
+      JSON.stringify(row.recentForm),
+      JSON.stringify(row.upcomingMatches),
+      row.upNextLogo,
+      row.isOurTeam ? 1 : 0,
+      JSON.stringify(row.raw),
+      row.updatedAt,
+    ).run();
+  }
+
+  return getSeasonLadderRows(env);
+};
+
 async function handleApi(request: Request, env: Env) {
   const url = new URL(request.url);
   const { pathname, searchParams } = url;
@@ -1269,6 +1577,16 @@ async function handleApi(request: Request, env: Env) {
   if (passcodeError) return passcodeError;
 
   try {
+    if (pathname === '/api/season-ladder' && method === 'GET') {
+      return jsonResponse(await getSeasonLadderRows(env), 200, { 'Cache-Control': 'no-store' });
+    }
+
+    if (pathname === '/api/admin/refresh-season-ladder' && method === 'POST') {
+      const adminPasscodeError = requireAdminPasscode(request, env);
+      if (adminPasscodeError) return adminPasscodeError;
+      return jsonResponse(await refreshSeasonLadder(env), 200, { 'Cache-Control': 'no-store' });
+    }
+
     if (pathname === '/api/events' && method === 'GET') {
       await maybePostAttendanceReminders(env);
       const { results } = await env.DB.prepare(
@@ -2203,6 +2521,15 @@ async function handleApi(request: Request, env: Env) {
 }
 
 export default {
+  async scheduled(_controller: unknown, env: Env, ctx: ExecutionContext): Promise<void> {
+    // Cloudflare Cron Triggers run in UTC. `0 12 * * 1` is Monday 12:00 UTC,
+    // which is Monday 22:00 in Sydney during AEST and Monday 23:00 during AEDT.
+    ctx.waitUntil((async () => {
+      await ensureSchema(env);
+      await refreshSeasonLadder(env);
+    })());
+  },
+
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
       await ensureSchema(env);
