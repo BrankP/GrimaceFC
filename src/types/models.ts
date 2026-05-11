@@ -56,12 +56,15 @@ export interface MessageReactionSummary {
   users: MessageReactionUser[];
 }
 
+export type MessageType = 'normal' | 'rev';
+
 export interface Message {
   id: string;
   userId: string;
   text: string;
   createdAt: string;
   editedAt?: string | null;
+  messageType: MessageType;
   notificationPreference?: NotificationPreference;
   reactions: MessageReactionSummary[];
 }

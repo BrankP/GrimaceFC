@@ -9,7 +9,7 @@ import { NextRefPage } from './pages/NextRefPage';
 import { TeamStatsPage } from './pages/TeamStatsPage';
 import { clearAvailability, loadAppData, patchMessage, postAvailability, postEventScore, postLineup, postMessage, removeMessage, saveNotificationPreference, toggleReaction, upsertUser } from './services/dataService';
 import { canUsePushNotifications, disablePushNotifications, syncPushSubscription, type PushSyncFailureReason } from './services/pushNotifications';
-import type { AvailabilityStatus, DataStore, Lineup, NotificationPreference, User } from './types/models';
+import type { AvailabilityStatus, DataStore, Lineup, MessageType, NotificationPreference, User } from './types/models';
 import { readCurrentUserId, readTeamPasscode, readVisitorSession, writeCurrentUserId, writeTeamPasscode, writeVisitorSession } from './utils/storage';
 
 type AppState = {
@@ -20,7 +20,7 @@ type AppState = {
   canWrite: boolean;
   isVisitor: boolean;
   upsertUserByName: (payload: { firstName: string; lastName: string; passcode: string; isVisitor: boolean }) => Promise<void>;
-  addMessage: (text: string) => Promise<void>;
+  addMessage: (text: string, messageType?: MessageType) => Promise<void>;
   editMessage: (messageId: string, text: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   toggleMessageReaction: (messageId: string, emoji: string) => Promise<void>;
@@ -513,10 +513,10 @@ export default function App() {
     }
   };
 
-  const addMessage = async (text: string) => {
+  const addMessage = async (text: string, messageType: MessageType = 'normal') => {
     if (!currentUserId || !canWrite) return;
     await withWriteGuard(async () => {
-      await postMessage({ userId: currentUserId, text });
+      await postMessage({ userId: currentUserId, text, messageType });
     });
   };
 

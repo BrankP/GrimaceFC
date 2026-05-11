@@ -8,6 +8,8 @@ const formatDateHeading = (isoDate: string) =>
 const formatDateTime = (isoDate: string) =>
   new Intl.DateTimeFormat('en-US', { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(isoDate));
 
+const REV_USER_ID = 'usr-007';
+
 const QUICK_REACTION_OPTIONS = ['😂', '😁', '😒', '🥲', '🤗', '🫡', '🫠', '🤑', '🤬', '💩'];
 const EMOJI_OPTIONS = Array.from(new Set([
   ...QUICK_REACTION_OPTIONS,
@@ -52,6 +54,7 @@ export function ChatPage() {
   const actionMessage = actionMessageId ? messages.find((message) => message.id === actionMessageId) ?? null : null;
   const detailsMessage = detailsMessageId ? messages.find((message) => message.id === detailsMessageId) ?? null : null;
   const additionalActionEmojis = EMOJI_OPTIONS.filter((emoji) => !QUICK_REACTION_OPTIONS.includes(emoji));
+  const canSendRevMessage = canWrite && currentUser?.id === REV_USER_ID;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -144,14 +147,28 @@ export function ChatPage() {
     });
   };
 
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!text.trim()) return;
-    void addMessage(text.trim());
+  const resetComposer = () => {
     setText('');
     setMentionQuery('');
     setMentionStart(null);
     setActiveMentionIndex(0);
+  };
+
+  const sendMessage = (messageType: Message['messageType']) => {
+    const trimmedText = text.trim();
+    if (!trimmedText) return;
+    void addMessage(trimmedText, messageType);
+    resetComposer();
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    sendMessage('normal');
+  };
+
+  const onRevSubmit = () => {
+    if (!canSendRevMessage) return;
+    sendMessage('rev');
   };
 
   const startLongPress = (messageId: string) => () => {
@@ -206,19 +223,22 @@ export function ChatPage() {
           <div key={group.date} className="chat-day-group">
             <p className="chat-date-divider">{formatDateHeading(group.messages[0].createdAt)}</p>
             {group.messages.map((message) => {
+              const isRevMessage = message.messageType === 'rev';
+
               return (
                 <article
-                  className="bubble modern-bubble"
+                  className={isRevMessage ? 'rev-message-card' : 'bubble modern-bubble'}
                   key={message.id}
                   onPointerDown={startLongPress(message.id)}
                   onPointerUp={clearLongPress}
                   onPointerCancel={clearLongPress}
                   onPointerLeave={clearLongPress}
                 >
-                  <div className="chat-meta-row">
+                  <div className={isRevMessage ? 'rev-message-header' : 'chat-meta-row'}>
+                    {isRevMessage && <span className="rev-message-bolt" aria-hidden="true">⚡</span>}
                     <button
                       type="button"
-                      className="name-btn"
+                      className={isRevMessage ? 'name-btn rev-message-sender' : 'name-btn'}
                       onClick={() => {
                         if (!canWrite) return;
                         setEditingUserId(message.userId);
@@ -228,11 +248,16 @@ export function ChatPage() {
                       {getDisplayName(message.userId)}
                     </button>
                     <small>{formatDateTime(message.createdAt)}</small>
+                    {isRevMessage && <span className="rev-message-badge">NEW</span>}
                   </div>
-                  <p>{renderTaggedText(message.text)}</p>
+                  {isRevMessage ? (
+                    <div className="rev-message-body">{renderTaggedText(message.text)}</div>
+                  ) : (
+                    <p>{renderTaggedText(message.text)}</p>
+                  )}
                   {message.editedAt && <small className="edited-label">edited</small>}
                   {message.reactions.length > 0 && (
-                    <div className="message-reaction-row">
+                    <div className={isRevMessage ? 'message-reaction-row rev-message-footer' : 'message-reaction-row'}>
                       {message.reactions.map((reaction) => (
                         <button
                           type="button"
@@ -336,6 +361,9 @@ export function ChatPage() {
             </ul>
           )}
         </div>
+        {canSendRevMessage && (
+          <button type="button" className="rev-send-btn" onClick={onRevSubmit}>Rev</button>
+        )}
         <button type="submit">Send</button>
       </form>
       ) : (

@@ -32,6 +32,7 @@ const RATE_WINDOW_MS = 60_000;
 const READ_LIMIT = 60;
 const WRITE_LIMIT = 20;
 const SYSTEM_USER_ID = 'grimace-bot';
+const REV_MESSAGE_USER_ID = 'usr-007';
 const DRIBL_LADDER_URL = 'https://mc-api.dribl.com/api/ladders?date_range=default&season=bam17yAKwX&competition=2PmjO2ojNZ&league=nmYJEzqaNz&ladder_type=regular&tenant=kbam1QjmwX&require_pools=true';
 const DRIBL_LADDER_PAGE_URL = 'https://mwfa.dribl.com/ladders/?competition=2PmjO2ojNZ&date_range=default&ladder_type=regular&league=nmYJEzqaNz&season=bam17yAKwX&timezone=Australia%2FSydney';
 const OUR_LADDER_TEAM_NAME = 'Allambie Beacon Hill United FC AL 06 Mixed B';
@@ -92,13 +93,13 @@ const resolvePasscodeRole = (provided: string, env: Env): 'admin' | 'view' | nul
 const insertSystemMessage = async (env: Env, text: string, fallbackUserId?: string) => {
   await ensureGrimaceUser(env);
   try {
-    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(createId('msg'), SYSTEM_USER_ID, text, nowIso())
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at, message_type) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(createId('msg'), SYSTEM_USER_ID, text, nowIso(), 'normal')
       .run();
   } catch (err) {
     if (!fallbackUserId) throw err;
-    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-      .bind(createId('msg'), fallbackUserId, text, nowIso())
+    await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at, message_type) VALUES (?1, ?2, ?3, ?4, ?5)')
+      .bind(createId('msg'), fallbackUserId, text, nowIso(), 'normal')
       .run();
   }
 };
@@ -581,6 +582,7 @@ const schemaStatements = [
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     edited_at TEXT,
+    message_type TEXT NOT NULL DEFAULT 'normal' CHECK(message_type IN ('normal','rev')),
     FOREIGN KEY(user_id) REFERENCES users(id)
   )`,
   `CREATE TABLE IF NOT EXISTS message_reactions (
@@ -777,12 +779,16 @@ const ensureEventDutyColumns = async (env: Env) => {
   }
 };
 
-const ensureMessageEditColumn = async (env: Env) => {
+const ensureMessageColumns = async (env: Env) => {
   const columnsResult = await env.DB.prepare('PRAGMA table_info(messages)').all<{ name: string }>();
   const existingColumns = new Set(columnsResult.results.map((column) => String(column.name)));
 
   if (!existingColumns.has('edited_at')) {
     await env.DB.prepare('ALTER TABLE messages ADD COLUMN edited_at TEXT').run();
+  }
+
+  if (!existingColumns.has('message_type')) {
+    await env.DB.prepare("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'normal' CHECK(message_type IN ('normal','rev'))").run();
   }
 };
 
@@ -979,7 +985,7 @@ const ensureSchema = async (env: Env) => {
       await ensureUserStatsColumns(env);
       await ensureUserNotificationPreferenceColumn(env);
       await ensurePushSubscriptionDiagnosticColumns(env);
-      await ensureMessageEditColumn(env);
+      await ensureMessageColumns(env);
       await ensureRefRosterIdColumn(env);
       await ensureNextRefStateSlotColumn(env);
       await ensureDefaultDutyAssignments(env);
@@ -992,7 +998,7 @@ const ensureSchema = async (env: Env) => {
 };
 
 
-type MessageRow = { id: string; user_id: string; text: string; created_at: string; edited_at: string | null };
+type MessageRow = { id: string; user_id: string; text: string; created_at: string; edited_at: string | null; message_type: 'normal' | 'rev' | null };
 type ReactionRow = { message_id: string; emoji: string; user_id: string; user_name: string; created_at: string };
 
 const normalizeEmoji = (value: unknown) => String(value ?? '').trim().slice(0, 32);
@@ -1030,13 +1036,14 @@ const getMessagePayloads = async (env: Env, rows: MessageRow[]) => {
       text: row.text,
       createdAt: row.created_at,
       editedAt: row.edited_at,
+      messageType: row.message_type === 'rev' ? 'rev' : 'normal',
       reactions: Array.from(byEmoji.entries()).map(([emoji, users]) => ({ emoji, count: users.length, users })),
     };
   });
 };
 
 const getMessagePayload = async (env: Env, messageId: string) => {
-  const row = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at FROM messages WHERE id = ?1 LIMIT 1')
+  const row = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at, message_type FROM messages WHERE id = ?1 LIMIT 1')
     .bind(messageId)
     .first<MessageRow>();
   if (!row) return null;
@@ -2314,20 +2321,22 @@ async function handleApi(request: Request, env: Env) {
     }
 
     if (pathname === '/api/messages' && method === 'GET') {
-      const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at FROM messages ORDER BY created_at DESC LIMIT 50').all<MessageRow>();
+      const { results } = await env.DB.prepare('SELECT id, user_id, text, created_at, edited_at, message_type FROM messages ORDER BY created_at DESC LIMIT 50').all<MessageRow>();
       const payload = await getMessagePayloads(env, results.reverse());
       return jsonResponse(payload, 200, cacheHeadersFor(pathname));
     }
 
     if (pathname === '/api/messages' && method === 'POST') {
-      const body = (await request.json()) as { userId?: string; text?: string };
+      const body = (await request.json()) as { userId?: string; text?: string; messageType?: string };
       if (!body.userId || !body.text?.trim()) return errorResponse('userId and text are required');
+      const messageType = body.messageType === 'rev' ? 'rev' : 'normal';
+      if (messageType === 'rev' && body.userId !== REV_MESSAGE_USER_ID) return errorResponse('Only Cale Whiting can send Rev messages', 403);
       const id = createId('msg');
       const createdAt = nowIso();
       const trimmedText = body.text.trim();
 
-      await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at) VALUES (?1, ?2, ?3, ?4)')
-        .bind(id, body.userId, trimmedText, createdAt)
+      await env.DB.prepare('INSERT INTO messages (id, user_id, text, created_at, message_type) VALUES (?1, ?2, ?3, ?4, ?5)')
+        .bind(id, body.userId, trimmedText, createdAt, messageType)
         .run();
 
       try {

@@ -1,4 +1,4 @@
-import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, NotificationPreference, SeasonLadderResponse, TeamEvent, User } from '../types/models';
+import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, MessageType, NextRefHistoryEntry, NextRefState, NotificationPreference, SeasonLadderResponse, TeamEvent, User } from '../types/models';
 import { getNextGameOnOrAfterToday } from '../utils/events';
 import { readTeamPasscode } from '../utils/storage';
 
@@ -41,7 +41,7 @@ export const loadAppData = async (): Promise<DataStore> => {
 export const upsertUser = (payload: { id?: string; name: string; nickname?: string | null; createdYear?: number }) =>
   api<User>('/users/upsert', { method: 'POST', body: JSON.stringify(payload) });
 
-export const postMessage = (payload: { userId: string; text: string }) =>
+export const postMessage = (payload: { userId: string; text: string; messageType?: MessageType }) =>
   api<Message>('/messages', { method: 'POST', body: JSON.stringify(payload) });
 
 export const patchMessage = (payload: { messageId: string; userId: string; text: string }) =>
