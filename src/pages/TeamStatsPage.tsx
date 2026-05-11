@@ -124,14 +124,6 @@ const formatLastUpdated = (value: string | null) => {
   return date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 };
 
-const normalizeResultToken = (result: string | null | undefined): LastFiveResult => {
-  const normalized = String(result ?? '').trim().toUpperCase();
-  if (normalized === 'W') return 'W';
-  if (normalized === 'L') return 'L';
-  if (normalized === 'D') return 'D';
-  return null;
-};
-
 const resultToneClass = (result: LastFiveResult) => {
   if (result === 'W') return 'is-win';
   if (result === 'L') return 'is-loss';
@@ -145,13 +137,7 @@ const resultSymbol = (result: LastFiveResult) => {
   return '–';
 };
 
-const recentFormForLadderRow = (row: SeasonLadderRow, ourRecentForm: LastFiveResult[]): LastFiveResult[] => {
-  const supplied = row.recentForm.map(normalizeResultToken).filter((result): result is Exclude<LastFiveResult, null> => result !== null).slice(-5);
-  if (supplied.length) return supplied;
-  return row.isOurTeam ? ourRecentForm.slice(-5) : [];
-};
-
-function LiveLadderSection({ isAdmin, ourRecentForm }: { isAdmin: boolean; ourRecentForm: LastFiveResult[] }) {
+function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rows, setRows] = useState<SeasonLadderRow[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -241,48 +227,32 @@ function LiveLadderSection({ isAdmin, ourRecentForm }: { isAdmin: boolean; ourRe
                     <th>ADJ.</th>
                     <th>AVG.</th>
                     <th>PTS</th>
-                    <th>Recent Form</th>
                     <th>Up Next</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row) => {
-                    const recentForm = recentFormForLadderRow(row, ourRecentForm);
-                    return (
-                      <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
-                        <td className="ladder-position">{row.position ?? '–'}</td>
-                        <td className="ladder-team-cell">
-                          <LadderLogo src={row.clubLogo} alt={`${row.teamName} logo`} />
-                          <span>{row.teamName}</span>
-                        </td>
-                        <td>{row.played}</td>
-                        <td>{row.won}</td>
-                        <td>{row.drawn}</td>
-                        <td>{row.lost}</td>
-                        <td>{row.byes}</td>
-                        <td>{row.forfeits}</td>
-                        <td>{row.goalsFor}</td>
-                        <td>{row.goalsAgainst}</td>
-                        <td>{row.goalDifference}</td>
-                        <td>{row.pointAdjustment}</td>
-                        <td>{row.pointsPerGame.toFixed(2)}</td>
-                        <td className="ladder-points">{row.points}</td>
-                        <td>
-                          <span className="team-last-five-row ladder-last-five-row" aria-label="Recent form with most recent on the right">
-                            {recentForm.length ? recentForm.map((result, index) => {
-                              const isMostRecent = index === recentForm.length - 1;
-                              return (
-                                <span key={`${row.id}-form-${index}`} className={`team-last-five-dot ${resultToneClass(result)} ${isMostRecent ? 'is-most-recent' : ''}`} aria-label={result ?? 'No result'}>
-                                  {resultSymbol(result)}
-                                </span>
-                              );
-                            }) : <span className="team-last-five-dot is-empty" aria-label="No result">–</span>}
-                          </span>
-                        </td>
-                        <td><LadderLogo src={row.upNextLogo} alt="Up next opponent logo" /></td>
-                      </tr>
-                    );
-                  })}
+                  {rows.map((row) => (
+                    <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
+                      <td className="ladder-position">{row.position ?? '–'}</td>
+                      <td className="ladder-team-cell">
+                        <LadderLogo src={row.clubLogo} alt={`${row.teamName} logo`} />
+                        <span>{row.teamName}</span>
+                      </td>
+                      <td>{row.played}</td>
+                      <td>{row.won}</td>
+                      <td>{row.drawn}</td>
+                      <td>{row.lost}</td>
+                      <td>{row.byes}</td>
+                      <td>{row.forfeits}</td>
+                      <td>{row.goalsFor}</td>
+                      <td>{row.goalsAgainst}</td>
+                      <td>{row.goalDifference}</td>
+                      <td>{row.pointAdjustment}</td>
+                      <td>{row.pointsPerGame.toFixed(2)}</td>
+                      <td className="ladder-points">{row.points}</td>
+                      <td><LadderLogo src={row.upNextLogo} alt="Up next opponent logo" /></td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -454,7 +424,7 @@ export function TeamStatsPage() {
         </article>
       </div>
 
-      <LiveLadderSection isAdmin={canEditScores} ourRecentForm={seasonRecord.lastFive} />
+      <LiveLadderSection isAdmin={canEditScores} />
 
       {!hasAnyStats && <p className="card muted">No stats recorded yet.</p>}
 
