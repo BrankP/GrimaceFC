@@ -145,25 +145,13 @@ const resultSymbol = (result: LastFiveResult) => {
   return '–';
 };
 
-const generatedRecentFormFromRecord = (row: SeasonLadderRow): LastFiveResult[] => {
-  const wins = Math.max(0, toStatValue(row.won));
-  const draws = Math.max(0, toStatValue(row.drawn));
-  const losses = Math.max(0, toStatValue(row.lost));
-  const played = Math.max(0, toStatValue(row.played));
-  const generated: LastFiveResult[] = [
-    ...Array.from({ length: wins }, () => 'W' as const),
-    ...Array.from({ length: draws }, () => 'D' as const),
-    ...Array.from({ length: losses }, () => 'L' as const),
-  ];
-  return generated.slice(-Math.min(5, played));
-};
-
-const recentFormForLadderRow = (row: SeasonLadderRow): LastFiveResult[] => {
+const recentFormForLadderRow = (row: SeasonLadderRow, ourRecentForm: LastFiveResult[]): LastFiveResult[] => {
   const supplied = row.recentForm.map(normalizeResultToken).filter((result): result is Exclude<LastFiveResult, null> => result !== null).slice(-5);
-  return supplied.length ? supplied : generatedRecentFormFromRecord(row);
+  if (supplied.length) return supplied;
+  return row.isOurTeam ? ourRecentForm.slice(-5) : [];
 };
 
-function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
+function LiveLadderSection({ isAdmin, ourRecentForm }: { isAdmin: boolean; ourRecentForm: LastFiveResult[] }) {
   const [isOpen, setIsOpen] = useState(false);
   const [rows, setRows] = useState<SeasonLadderRow[]>([]);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
@@ -259,7 +247,7 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
                 </thead>
                 <tbody>
                   {rows.map((row) => {
-                    const recentForm = recentFormForLadderRow(row);
+                    const recentForm = recentFormForLadderRow(row, ourRecentForm);
                     return (
                       <tr key={row.id} className={row.isOurTeam ? 'is-our-team' : ''}>
                         <td className="ladder-position">{row.position ?? '–'}</td>
@@ -466,7 +454,7 @@ export function TeamStatsPage() {
         </article>
       </div>
 
-      <LiveLadderSection isAdmin={canEditScores} />
+      <LiveLadderSection isAdmin={canEditScores} ourRecentForm={seasonRecord.lastFive} />
 
       {!hasAnyStats && <p className="card muted">No stats recorded yet.</p>}
 

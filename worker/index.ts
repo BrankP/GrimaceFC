@@ -1391,7 +1391,7 @@ const extractLadderCandidates = (value: unknown, candidates: Record<string, unkn
   return candidates;
 };
 
-const normalizeRecentForm = (row: Record<string, unknown>) => {
+const normalizeRecentForm = (row: Record<string, unknown>, teamName: string) => {
   const direct = row.recent_form ?? row.recentForm ?? row.form ?? row.last_five ?? row.lastFive;
   const normalizeToken = (value: unknown): string | null => {
     const token = String(value ?? '').trim().toUpperCase();
@@ -1400,9 +1400,42 @@ const normalizeRecentForm = (row: Record<string, unknown>) => {
     if (token.startsWith('L') || token === 'LOSS') return 'L';
     return null;
   };
+  const resultFromScores = (forScore: unknown, againstScore: unknown): string | null => {
+    const normalizedFor = Number(forScore);
+    const normalizedAgainst = Number(againstScore);
+    if (!Number.isFinite(normalizedFor) || !Number.isFinite(normalizedAgainst)) return null;
+    if (normalizedFor > normalizedAgainst) return 'W';
+    if (normalizedFor < normalizedAgainst) return 'L';
+    return 'D';
+  };
+  const matchDateTime = (match: Record<string, unknown>) => {
+    const value = match.date ?? match.match_date ?? match.matchDate ?? match.start_time ?? match.startTime ?? match.kickoff;
+    const time = value ? new Date(String(value)).getTime() : Number.NaN;
+    return Number.isFinite(time) ? time : null;
+  };
+  const resultFromMatch = (match: Record<string, unknown>) => {
+    const directResult = normalizeToken(match.result ?? match.outcome ?? match.ladder_result);
+    if (directResult) return directResult;
+
+    const rowScoreResult = resultFromScores(
+      match.team_score ?? match.teamScore ?? match.goals_for ?? match.goalsFor ?? match.for,
+      match.opponent_score ?? match.opponentScore ?? match.goals_against ?? match.goalsAgainst ?? match.against,
+    );
+    if (rowScoreResult) return rowScoreResult;
+
+    const homeTeam = isRecord(match.home_team) ? match.home_team : {};
+    const awayTeam = isRecord(match.away_team) ? match.away_team : {};
+    const homeTeamName = normalizeNullableString(match.home_team_name ?? match.homeTeamName ?? homeTeam.name);
+    const awayTeamName = normalizeNullableString(match.away_team_name ?? match.awayTeamName ?? awayTeam.name);
+    const homeScore = match.home_score ?? match.homeScore ?? match.home_team_score ?? match.homeTeamScore;
+    const awayScore = match.away_score ?? match.awayScore ?? match.away_team_score ?? match.awayTeamScore;
+    if (homeTeamName === teamName) return resultFromScores(homeScore, awayScore);
+    if (awayTeamName === teamName) return resultFromScores(awayScore, homeScore);
+    return null;
+  };
 
   if (Array.isArray(direct)) {
-    return direct.map((item) => isRecord(item) ? normalizeToken(item.result ?? item.outcome ?? item.type ?? item.value) : normalizeToken(item)).filter((item): item is string => item !== null).slice(-5);
+    return direct.map((item) => isRecord(item) ? resultFromMatch(item) : normalizeToken(item)).filter((item): item is string => item !== null).slice(-5);
   }
 
   if (typeof direct === 'string') {
@@ -1411,7 +1444,12 @@ const normalizeRecentForm = (row: Record<string, unknown>) => {
 
   const matches = row.recent_matches ?? row.recentMatches ?? row.matches;
   if (Array.isArray(matches)) {
-    return matches.map((match) => isRecord(match) ? normalizeToken(match.result ?? match.outcome ?? match.ladder_result) : null).filter((item): item is string => item !== null).slice(-5);
+    return matches
+      .filter(isRecord)
+      .sort((a, b) => (matchDateTime(a) ?? 0) - (matchDateTime(b) ?? 0))
+      .map(resultFromMatch)
+      .filter((item): item is string => item !== null)
+      .slice(-5);
   }
 
   return [];
@@ -1453,7 +1491,7 @@ const parseSeasonLadderPayload = (payload: unknown, updatedAt = nowIso()): Parse
       const goalsAgainst = normalizeNumber(row.goals_against ?? row.goalsAgainst ?? row.against);
       const goalDifference = normalizeNumber(row.goal_difference ?? row.goalDifference ?? row.gd, goalsFor - goalsAgainst);
       const pointAdjustment = normalizeNumber(row.point_adjustment ?? row.adj ?? row.adjustment);
-      const recentForm = normalizeRecentForm(row);
+      const recentForm = normalizeRecentForm(row, teamName);
 
       return {
         id,
