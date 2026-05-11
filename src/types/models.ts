@@ -86,6 +86,38 @@ export interface Availability {
   updatedAt: string;
 }
 
+export interface SeasonLadderRow {
+  id: string;
+  position: number | null;
+  teamHashId: string | null;
+  teamName: string;
+  clubName: string | null;
+  clubCode: string | null;
+  clubLogo: string | null;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  byes: number;
+  forfeits: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  pointAdjustment: number;
+  pointsPerGame: number;
+  points: number;
+  recentForm: Array<'W' | 'D' | 'L' | string>;
+  upcomingMatches: unknown[];
+  upNextLogo: string | null;
+  isOurTeam: boolean;
+  updatedAt: string;
+}
+
+export interface SeasonLadderResponse {
+  updatedAt: string | null;
+  rows: SeasonLadderRow[];
+}
+
 export interface DataStore {
   users: User[];
   events: TeamEvent[];

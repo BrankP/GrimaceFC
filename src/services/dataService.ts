@@ -1,4 +1,4 @@
-import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, NotificationPreference, TeamEvent, User } from '../types/models';
+import type { AvailabilityStatus, DataStore, EventScore, Lineup, Message, NextRefHistoryEntry, NextRefState, NotificationPreference, SeasonLadderResponse, TeamEvent, User } from '../types/models';
 import { getNextGameOnOrAfterToday } from '../utils/events';
 import { readTeamPasscode } from '../utils/storage';
 
@@ -100,3 +100,6 @@ export const getNextRefHistory = () => api<NextRefHistoryEntry[]>('/next-ref/his
 
 export const saveNotificationPreference = (payload: { userId: string; preference: NotificationPreference }) =>
   api<{ ok: true }>('/users/notification-preference', { method: 'POST', body: JSON.stringify(payload) });
+
+export const getSeasonLadder = () => api<SeasonLadderResponse>('/season-ladder');
+export const refreshSeasonLadder = () => api<SeasonLadderResponse>('/admin/refresh-season-ladder', { method: 'POST' });

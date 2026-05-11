@@ -344,3 +344,58 @@ If you want, you can now evaluate each function in three passes:
 3. **Candidates to remove/simplify** (long-press score edit UX, some status/detail views, aggressive cache wipe behavior).
 
 If you share your priorities (e.g., “optimize for casual players” vs “admin-heavy ops”), I can turn this into a direct recommended cut list.
+
+## Live Ladder
+
+The Team Stats page includes a collapsed-by-default **Live Ladder** section under the season/count cards. It is visible to visitors, players, and admins.
+
+### Source API
+
+The ladder sync reads Dribl JSON directly from:
+
+```text
+GET https://mc-api.dribl.com/api/ladders?date_range=default&season=bam17yAKwX&competition=2PmjO2ojNZ&league=nmYJEzqaNz&ladder_type=regular&tenant=kbam1QjmwX&require_pools=true
+```
+
+The Worker uses only the required JSON/XHR headers and does not scrape rendered HTML or embed an iframe.
+
+### Storage and refresh timing
+
+Only the latest ladder is stored in D1 in `season_ladder_current`; there is no historical ladder storage. Each sync deletes the current rows and reinserts the latest parsed rows with a shared `updated_at` timestamp that appears in the UI as **Last updated**.
+
+Cloudflare runs the scheduled refresh with cron `0 12 * * 1`. Cloudflare cron is UTC, so this is Monday 12:00 UTC, which is Monday 22:00 in Sydney during AEST and Monday 23:00 during AEDT.
+
+### Logos
+
+The app does not download or store logo files. It stores only remote logo URLs returned by Dribl (`club_logo` for teams and `home_club_image` / `away_club_image` for the next opponent) and renders those URLs directly with constrained image sizing and a fallback placeholder.
+
+### Manual admin refresh
+
+Admins see a **Refresh ladder now** button inside the Live Ladder section. The button calls `POST /api/admin/refresh-season-ladder`, which requires the admin passcode header. Visitors and non-admin players can view `GET /api/season-ladder` but do not see the manual refresh action.
+
+### Testing the ladder sync
+
+Local/preview flow from Windows Terminal:
+
+```powershell
+npm run build
+npx wrangler d1 migrations apply grimace-fc --local
+npx wrangler dev
+```
+
+Then refresh manually with an admin passcode:
+
+```powershell
+curl.exe -X POST http://localhost:8787/api/admin/refresh-season-ladder -H "x-team-passcode: adminadmin" -H "Content-Type: application/json"
+curl.exe http://localhost:8787/api/season-ladder
+```
+
+Remote deployment flow from Windows Terminal:
+
+```powershell
+npm run build
+npx wrangler d1 migrations apply grimace-fc --remote
+npx wrangler deploy
+```
+
+After deployment, trigger a manual admin refresh through the Team Stats page or with the production Worker URL and the same admin passcode header.

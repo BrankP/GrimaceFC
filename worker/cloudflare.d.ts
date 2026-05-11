@@ -16,3 +16,7 @@ interface D1Database {
 interface Fetcher {
   fetch(input: Request | string, init?: RequestInit): Promise<Response>;
 }
+
+interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
