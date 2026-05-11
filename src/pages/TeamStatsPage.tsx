@@ -140,6 +140,7 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [messageKind, setMessageKind] = useState<'success' | 'warning'>('success');
 
   const loadLadder = async () => {
     setIsLoading(true);
@@ -163,11 +164,13 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
     setIsRefreshing(true);
     setError('');
     setMessage('');
+    setMessageKind('success');
     try {
       const payload = await refreshSeasonLadder();
       setRows(payload.rows);
       setUpdatedAt(payload.updatedAt);
-      setMessage('Ladder refreshed successfully.');
+      setMessage(payload.warning ?? 'Ladder refreshed successfully.');
+      setMessageKind(payload.warning ? 'warning' : 'success');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh the ladder.');
     } finally {
@@ -196,7 +199,7 @@ function LiveLadderSection({ isAdmin }: { isAdmin: boolean }) {
             )}
           </div>
 
-          {message && <p className="success-text">{message}</p>}
+          {message && <p className={messageKind === 'warning' ? 'warning-text' : 'success-text'}>{message}</p>}
           {error && <p className="error">Unable to load ladder: {error}</p>}
           {isLoading && <p className="muted">Loading live ladder…</p>}
           {!isLoading && !error && !rows.length && <p className="muted">No ladder rows yet. An admin can refresh the ladder now.</p>}

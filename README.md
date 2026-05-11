@@ -371,7 +371,7 @@ The app does not download or store logo files. It stores only remote logo URLs r
 
 ### Manual admin refresh
 
-Admins see a **Refresh ladder now** button inside the Live Ladder section. The button calls `POST /api/admin/refresh-season-ladder`, which requires the admin passcode header. Visitors and non-admin players can view `GET /api/season-ladder` but do not see the manual refresh action.
+Admins see a **Refresh ladder now** button inside the Live Ladder section. The button calls `POST /api/admin/refresh-season-ladder`, which requires the admin passcode header. Visitors and non-admin players can view `GET /api/season-ladder` but do not see the manual refresh action. If Dribl blocks or rejects the upstream refresh but a saved ladder already exists, the API returns the saved ladder with a warning instead of failing the admin action outright.
 
 ### Testing the ladder sync
 

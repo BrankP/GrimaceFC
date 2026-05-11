@@ -479,6 +479,7 @@ input,select { width: 100%; padding: .7rem; border-radius: 10px; border: 1px sol
 .live-ladder-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
 .live-ladder-toolbar button { min-height: 38px; padding: .55rem .75rem; }
 .success-text { color: #157347; font-weight: 700; }
+.warning-text { color: #b54708; font-weight: 700; }
 .live-ladder-scroll {
   overflow-x: auto;
   border: 1px solid #e5e7eb;
