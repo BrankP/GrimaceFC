@@ -1,0 +1,37 @@
+﻿# GrimaceFC Repository Threat Model
+
+## Overview
+
+GrimaceFC is a private team web app for football scheduling, chat, lineup management, referee rotation, attendance, scoring, team stats, and web push notifications. The primary runtime is a Cloudflare Worker (`worker/index.ts`) serving `/api/*` endpoints and static assets built from the React/Vite frontend under `src/`. Persistent state is stored in Cloudflare D1 using schema and seed data in `migrations/`. The frontend stores session identity and passcode material in browser storage through `src/utils/storage.ts` and sends write requests through `src/services/dataService.ts`.
+
+Primary assets are team membership data, attendance records, chat content, lineup/referee/scoring state, push subscription endpoints/keys, passcodes, and the integrity of generated system messages and standings. The app appears intended for a small trusted team, but the Worker/API is Internet-reachable and must treat all request bodies, query strings, route parameters, headers, browser storage, service worker input, and third-party HTTP responses as untrusted.
+
+## Threat Model, Trust Boundaries, and Assumptions
+
+The main trust boundary is between arbitrary Internet clients and the Cloudflare Worker API. Read endpoints are broadly public, while write endpoints rely on the `x-team-passcode` header. Admin-only actions use the same header with an admin passcode. The frontend enforces visitor/read-only behavior for usability, but server-side checks are the actual security boundary.
+
+Actors include anonymous visitors, regular team members with the view/team passcode, admin users with the admin passcode, browser/service-worker code executing in a member's browser, Cloudflare/D1 runtime services, and external providers such as browser push services and the Dribl ladder API. A malicious anonymous user can call public GET endpoints, attempt write endpoints without passcodes, and send high-volume traffic. A malicious or compromised team member can send authenticated writes, spoof any client-supplied user id unless the server binds identity to credentials, and attempt to alter records outside their own account. A malicious admin-passcode holder can alter lineup/scoring/admin state. External push and ladder services can return unexpected responses and failures.
+
+Attacker-controlled inputs include request paths and parameters, JSON request bodies, the `x-team-passcode` header, chat text, names/nicknames, event/user/message ids, lineup payloads, score details, push subscription JSON, notification preference payloads, and browser-controlled service worker state. Operator-controlled inputs include Cloudflare Worker environment variables, Wrangler config, D1 bindings, VAPID keys, and seed/migration data. Developer-controlled inputs include source code, package dependencies, CI workflow configuration, and static assets.
+
+Security invariants include: only valid passcodes can mutate state; only admin passcodes can mutate admin-only surfaces; regular users should not be able to impersonate other users for self-service actions; user-controlled text must not execute script in other browsers; dynamic SQL must not be constructed from user-controlled identifiers or fragments; push subscriptions must not be readable or claimable by other users; passcodes and VAPID private keys must not be exposed to clients or source control; external fetches must not let attackers create SSRF-style behavior; and rate limiting must limit abusive traffic sufficiently for the deployment model.
+
+## Attack Surface, Mitigations, and Attacker Stories
+
+Primary runtime attack surfaces are the Cloudflare Worker API routes in `worker/index.ts`, frontend API calls in `src/services/dataService.ts`, service worker push handling in `public/service-worker.js`, browser push setup in `src/services/pushNotifications.ts`, local session/passcode handling in `src/utils/storage.ts`, and D1 migrations/seeds. The Worker uses D1 prepared statements for normal SQL value binding, which is a strong mitigation against value-based SQL injection. CORS is permissive, so passcode-bearing browser requests from any origin should be assumed possible if a user's passcode is exposed to a malicious site or extension.
+
+Relevant attacker stories include anonymous scraping of public team/chats/attendance data; brute force or reuse of hardcoded/default passcodes; authenticated member spoofing another user's `userId` in self-service endpoints; stored XSS through chat/name/nickname fields if React rendering or future HTML rendering becomes unsafe; abuse of push subscription registration/deletion to target or suppress notifications; unauthorized admin state changes if default admin passcode is present in production; and denial-of-service against API routes or push dispatch through expensive request patterns. Developer/tooling risks include accidental deployment of default secrets in `wrangler.jsonc`, dependency compromise, and CI/deploy token misuse.
+
+Existing mitigations include server-side passcode checks for write methods, a separate admin passcode helper for lineup and scoring, D1 prepared statements, body validation on many endpoints, basic isolate-local rate limiting, no-store cache headers for sensitive dynamic API responses, and React's default text escaping when values are rendered as text. These controls do not remove the need to validate object-level authorization and secret handling.
+
+Out-of-scope or lower-realism stories include arbitrary file read/write on the Worker runtime, server-side template injection in the React client, and SSRF from user-provided URLs if all outbound fetch targets remain hardcoded. These should be revisited if the app adds user-configurable webhooks, map URLs, media uploads, rich HTML, or OAuth/session credentials.
+
+## Severity Calibration (Critical, High, Medium, Low)
+
+Critical issues would expose privileged secrets or allow arbitrary unauthenticated administrative mutation of team state at Internet scale. Examples include committed production admin/passcode secrets that are accepted by the live Worker, an endpoint that bypasses admin checks for scoring/lineups, or a supply-chain/deploy workflow flaw that lets an attacker deploy Worker code.
+
+High issues would allow meaningful cross-user or cross-role compromise, persistent script execution in members' browsers, theft or takeover of push subscriptions, or broad unauthorized write access. Examples include member-authenticated endpoints allowing arbitrary user impersonation for messages, attendance, preferences, or referee decisions where the product expects per-user ownership; stored XSS in chat/names; or leaking VAPID private keys/passcodes to the client bundle.
+
+Medium issues would allow limited unauthorized reads/writes, privacy loss, abuse, or reliability degradation under realistic constraints. Examples include public read endpoints exposing private team schedules/chat to anyone, weak/default passcodes that are easy to guess but still required for writes, per-isolate rate limiting that can be bypassed by distributed traffic, or service-worker notification URLs that could be abused for confusing navigation inside the app origin.
+
+Low issues would be hard-to-exploit robustness problems, developer-only exposure, or issues requiring already privileged local access. Examples include verbose error messages, non-sensitive debug logging, stale generated build artifacts, or local scripts that are not part of deployed runtime behavior.
