@@ -104,24 +104,46 @@ const insertSystemMessage = async (env: Env, text: string, fallbackUserId?: stri
   }
 };
 
-const getRefGameLabel = async (env: Env, eventId: string) => {
-  const event = await env.DB.prepare('SELECT opponent, date FROM events WHERE id = ?1 LIMIT 1')
+const getRefGameEvent = async (env: Env, eventId: string) =>
+  env.DB.prepare('SELECT opponent, date FROM events WHERE id = ?1 LIMIT 1')
     .bind(eventId)
     .first<{ opponent: string | null; date: string | null }>();
+
+const getRefGameLabel = async (env: Env, eventId: string) => {
+  const event = await getRefGameEvent(env, eventId);
   if (event?.opponent) return `the ${event.opponent} game`;
   if (event?.date) return `the away game on ${event.date.slice(0, 10)}`;
   return 'the away game';
 };
 
+const getDaysUntilEvent = (date: string | null | undefined) => {
+  if (!date) return null;
+  const eventTime = Date.parse(date);
+  if (Number.isNaN(eventTime)) return null;
+  const startOfToday = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  const startOfEventDate = new Date(new Date(eventTime).toISOString().slice(0, 10)).getTime();
+  return Math.round((startOfEventDate - startOfToday) / 86_400_000);
+};
+
+const formatDaysUntilEvent = (date: string | null | undefined) => {
+  const daysUntil = getDaysUntilEvent(date);
+  if (daysUntil === null) return '';
+  return ` in ${daysUntil} ${daysUntil === 1 ? 'day' : 'days'}`;
+};
+
 const announceNextRefDecision = async (
   env: Env,
-  payload: { decisionText: string; eventId: string; nextRefName?: string | null; fallbackUserId?: string },
+  payload: { decisionText: string; eventId: string; nextRefName?: string | null; fallbackUserId?: string; includeDaysUntilGame?: boolean },
 ) => {
-  const gameLabel = await getRefGameLabel(env, payload.eventId);
+  const event = await getRefGameEvent(env, payload.eventId);
+  const gameLabel = event?.opponent ? `the ${event.opponent} game` : event?.date ? `the away game on ${event.date.slice(0, 10)}` : 'the away game';
+  const daySuffix = payload.includeDaysUntilGame ? formatDaysUntilEvent(event?.date) : '';
   const nextDecisionText = payload.nextRefName
-    ? ` @${payload.nextRefName}, it's your turn to decide for ${gameLabel}.`
+    ? payload.includeDaysUntilGame
+      ? ` @${payload.nextRefName}, it's your turn to decide`
+      : ` @${payload.nextRefName}, it's your turn to decide for ${gameLabel}.`
     : '';
-  await insertSystemMessage(env, `${payload.decisionText} for ${gameLabel}.${nextDecisionText}`, payload.fallbackUserId);
+  await insertSystemMessage(env, `${payload.decisionText} for ${gameLabel}${daySuffix}.${nextDecisionText}`, payload.fallbackUserId);
 };
 
 
@@ -133,22 +155,24 @@ const maybePostAttendanceReminders = async (env: Env) => {
 
   for (const event of events.results) {
     const missing = await env.DB.prepare(
-      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL AND users.id != ?2 ORDER BY users.name ASC',
+      'SELECT users.name AS name FROM users LEFT JOIN availability ON availability.user_id = users.id AND availability.event_id = ?1 WHERE availability.id IS NULL AND users.id != ?2 AND users.name != ?3 ORDER BY users.name ASC',
     )
-      .bind(event.id, SYSTEM_USER_ID)
+      .bind(event.id, SYSTEM_USER_ID, 'Josh Dennis')
       .all<{ name: string }>();
 
     if (!missing.results.length) continue;
 
     const marker = `[attendance-reminder:${event.id}:${reminderDate}]`;
-    const existing = await env.DB.prepare('SELECT id FROM messages WHERE text LIKE ?1 LIMIT 1')
-      .bind(`%${marker}%`)
+    const subject = event.event_type === 'Game' ? `${event.opponent ?? 'upcoming game'}` : `${event.occasion ?? 'upcoming session'}`;
+    const existing = await env.DB.prepare(
+      "SELECT id FROM messages WHERE text LIKE ?1 OR (date(created_at) = date('now') AND text LIKE ?2 AND text LIKE ?3) LIMIT 1",
+    )
+      .bind(`%${marker}%`, 'Shame corner:%', `%still haven't marked attendance for ${subject} (in 2 days).%`)
       .first<{ id: string }>();
     if (existing) continue;
 
-    const subject = event.event_type === 'Game' ? `${event.opponent ?? 'upcoming game'}` : `${event.occasion ?? 'upcoming session'}`;
     const names = missing.results.map((row) => `@${row.name}`).join(', ');
-    const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days). ${marker}`;
+    const text = `Shame corner: ${names} still haven't marked attendance for ${subject} (in 2 days).`;
 
     await insertSystemMessage(env, text);
   }
@@ -1894,6 +1918,7 @@ async function handleApi(request: Request, env: Env) {
         eventId: body.eventId,
         nextRefName: nextEligible.name,
         fallbackUserId: body.userId,
+        includeDaysUntilGame: true,
       });
 
       return jsonResponse(await buildNextRefPayload(env), 200, { 'Cache-Control': 'no-store' });
